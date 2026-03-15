@@ -14,3 +14,20 @@ Ein robustes Tool zur Aufbereitung von MusicXML-Dateien für barrierefreie Anwen
 2. Abhängigkeiten installieren:
    ```bash
    pip install music21 lxml typer rich fastapi uvicorn python-multipart
+
+## Nutzung
+1. Batch-Verarbeitung (CLI)
+Lege deine Dateien in den Ordner input und starte:
+python cli.py --input input
+Die Ergebnisse landen in output_cleaned (sauber) oder needs_review (manuelle Prüfung nötig).
+2. Web-UI (Review Queue)
+Starte das Backend:
+uvicorn api.server:app --reload
+Öffne dann die webapp/index.html in deinem Browser.
+## Roadmap / TODO
+
+1. SATB-Normalisierung: Automatisches Aufspalten von 2-System-Chorsätzen in 4-System-SATB.
+
+2. Shift-Left Algorithmus: Aktive rhythmische Korrektur durch Entfernen von Geister-Pausen.
+
+3. Braille-Profil: Radikale Entfernung aller visuellen Layout-Tags für optimierten Braille-Export.
