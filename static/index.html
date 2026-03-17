@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>MusicXML Sanitizer Preview</title>
+    <script src="https://www.verovio.org/javascript/latest/verovio-toolkit-wasm.js" defer></script>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; background: #f0f0f0; }
+        header { background: #2c3e50; color: white; padding: 1rem; }
+        #main { display: flex; flex: 1; overflow: hidden; }
+        #sidebar { width: 300px; background: white; border-right: 1px solid #ccc; overflow-y: auto; padding: 10px; }
+        #viewer { flex: 1; overflow: auto; padding: 20px; display: flex; justify-content: center; }
+        .file-item { padding: 8px; cursor: pointer; border-bottom: 1px solid #eee; }
+        .file-item:hover { background: #eee; }
+        #notation { background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <header>
+    <div style="font-size: 1.2em; font-weight: bold;">dzb lesen | Review Queue</div>
+    <div id="navigation">
+        <button onclick="changePage(-1)">◀ Zurück</button>
+        <span id="page-info">Seite 1</span>
+        <button onclick="changePage(1)">Vorwärts ▶</button>
+    </div>
+    <div id="status">Bereit.</div>
+</header>
+    <div id="main">
+        <div id="sidebar"><h3>Dateien</h3><div id="list"></div></div>
+        <div id="viewer"><div id="notation"></div></div>
+    </div>
+<script>
+    let vrvToolkit;
+    let currentPage = 1;
+    let totalPages = 1;
+
+    document.addEventListener("DOMContentLoaded", () => {
+        verovio.module.onRuntimeInitialized = () => {
+            vrvToolkit = new verovio.toolkit();
+            loadFileList();
+        };
+    });
+
+    async function loadFileList() {
+        const res = await fetch('/files');
+        const files = await res.json();
+        const list = document.getElementById("list");
+        list.innerHTML = "";
+        files.forEach(f => {
+            const div = document.createElement("div");
+            div.className = "file-item";
+            div.innerText = (f.folder === "needs_review" ? "🔴 " : "🟢 ") + f.name;
+            div.onclick = () => loadFile(f.folder, f.name);
+            list.appendChild(div);
+        });
+    }
+
+    async function loadFile(folder, name) {
+        const res = await fetch(`/file/${folder}/${name}`);
+        const data = await res.json();
+        
+        const options = {
+            pageWidth: 2100,
+            scale: 40,
+            adjustPageHeight: true,
+            header: 'none',
+            footer: 'none'
+        };
+        
+        vrvToolkit.setOptions(options);
+        vrvToolkit.loadData(data.content);
+        
+        totalPages = vrvToolkit.getPageCount();
+        currentPage = 1;
+        
+        // Suche nach dem fehlerhaften Takt (z.B. 512)
+        // In einem echten Workflow würden wir die Seitenzahl vom Backend abfragen
+        render();
+    }
+
+    function render() {
+        const svg = vrvToolkit.renderToSVG(currentPage);
+        document.getElementById("notation").innerHTML = svg;
+        document.getElementById("page-info").innerText = `Seite ${currentPage} von ${totalPages}`;
+        
+        // Markiere Fehler im aktuellen SVG (falls vorhanden)
+        highlightIssues();
+    }
+
+    function changePage(delta) {
+        if (currentPage + delta > 0 && currentPage + delta <= totalPages) {
+            currentPage += delta;
+            render();
+        }
+    }
+
+    function highlightIssues() {
+        // Sucht im SVG nach den Elementen, die wir rot gefärbt haben
+        const notes = document.querySelectorAll('g.note');
+        notes.forEach(n => {
+            // Verovio übernimmt Styles aus dem MusicXML
+            if (n.getAttribute('fill') === 'red') {
+                n.style.fill = "red";
+                n.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+    }
+</script>
+</body>
+</html>

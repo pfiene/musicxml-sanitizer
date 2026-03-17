@@ -1,125 +1,116 @@
-import typer
 import os
-import sys
+import json
 import warnings
 from pathlib import Path
+import typer
 from rich.console import Console
 from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
-# 1. Warnungen unterdrücken (macht die Konsole sauberer)
-warnings.filterwarnings("ignore", category=UserWarning)
+# 1. Warnungen unterdrücken
+warnings.filterwarnings("ignore")
 
-# 2. Eigene Module importieren
-try:
-    from core.voice_analyzer import VoiceAnalyzer
-    from core.parser import RobustParser
-    from music21 import converter
-except ImportError as e:
-    print(f"KRITISCHER FEHLER: Module konnten nicht geladen werden: {e}")
-    sys.exit(1)
+from core.voice_analyzer import VoiceAnalyzer
+from core.pre_processor import load_robustly
+from music21 import converter
 
+app = typer.Typer()
 console = Console()
 
-def main(
-    input_dir: str = typer.Option("input", "--input", "-i", help="Ordner mit den Quelldaten"),
-    output_dir: str = typer.Option("output_cleaned", "--output", "-o", help="Ordner für saubere Dateien"),
-    profile: str = typer.Option("grossdruck", "--profile", "-p", help="Profil (grossdruck/braille)")
-):
+class AuditLogger:
+    def __init__(self):
+        self.stats = []
+    def log(self, file: str, status: str, issues: int, actions: list):
+        self.stats.append({"file": file, "status": status, "issues": issues, "actions": actions})
+    def save_json(self, path: Path):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.stats, f, indent=4)
+
+def heavy_duty_fix(score):
     """
-    MusicXML Sanitizer - Reinigt und normalisiert Notendateien für die Barrierefreiheit (dzb lesen).
+    Zwingt den Beethoven-Score in ein gültiges Raster.
+    Löscht 2048stel und andere mathematische 'Geister'.
     """
-    input_path = Path(input_dir)
-    output_path = Path(output_dir)
-    review_path = Path("needs_review")
+    try:
+        # Quantisierung: Alles wird auf das nächste 64stel oder 128stel 'eingerastet'
+        # Das entfernt die winzigen Rundungsfehler (2048stel)
+        score.quantize((64, 128), processOffsets=True, processDurations=True, inPlace=True)
+    except:
+        pass
 
-    # Ordner anlegen
-    output_path.mkdir(exist_ok=True)
-    review_path.mkdir(exist_ok=True)
-
-    if not input_path.exists():
-        console.print(f"[red]Fehler: Ordner '{input_path}' nicht gefunden![/red]")
-        return
-
-    # Dateien suchen
-    files = [f for f in input_path.iterdir() if f.suffix.lower() in [".xml", ".musicxml", ".mxl"]]
-    
-    console.print(f"[bold cyan]Sanitizer gestartet[/bold cyan]")
-    console.print(f"Dateien gefunden: [bold]{len(files)}[/bold]\n")
-
-    if not files:
-        console.print("[yellow]Keine MusicXML oder MXL Dateien zum Verarbeiten gefunden.[/yellow]")
-        return
-
-    analyzer = VoiceAnalyzer()
-    stats = []
-
-    for file in files:
-        console.print(f"-> Verarbeite [bold]{file.name}[/bold]...", end="")
-        try:
-            # 1. Vorreinigung (XML Text-Ebene, fixt 2048th Tags)
-            cleaned_xml_bytes = RobustParser.pre_clean_xml(file)
-            
-            if cleaned_xml_bytes is None:
-                raise ValueError("Parser konnte XML nicht extrahieren.")
-
-            # 2. Laden in music21 (Format explizit musicxml)
-            score = converter.parse(cleaned_xml_bytes, format='musicxml')
-            
-            # 3. Analysieren & Reparieren (Quantisierung & Taktprüfung)
-            issues = analyzer.process_score(score)
-            
-            # 4. Status bestimmen
-            status = "CLEANED"
-            target_folder = output_path
-            
-            # Wenn ernste Probleme (Overfull) da sind -> Review
-            if any(i['type'] == "OVERFULL" for i in issues):
-                status = "NEEDS_REVIEW"
-                target_folder = review_path
-            # Wenn nur automatische Korrekturen (Mini-Noten) gemacht wurden -> AUTO_FIXED
-            elif any(i['type'] == "AUTO_FIXED" for i in issues):
-                status = "AUTO_FIXED"
-
-            # 5. Speichern
-            try:
-                out_file = target_folder / f"{file.stem}.musicxml"
-                score.write('musicxml', fp=out_file)
-                
-                stats.append({"file": file.name, "status": status, "issues": len(issues)})
-                
-                color = "green" if status in ["CLEANED", "AUTO_FIXED"] else "yellow"
-                console.print(f" [[{color}]{status}[/{color}]]")
-            except Exception as write_err:
-                # Hier knallt es oft bei Beethoven/Liszt, falls die Korrektur nicht reichte
-                stats.append({"file": file.name, "status": "WRITE_ERROR", "issues": 0})
-                console.print(f" [[red]WRITE_ERROR[/red]]")
-                console.print(f"    [dim red]{str(write_err)[:100]}...[/dim red]")
-            
-        except Exception as e:
-            console.print(f" [[red]LOAD_ERROR[/red]]")
-            console.print(f"    [dim red]{str(e)[:100]}...[/dim red]")
-            stats.append({"file": file.name, "status": "ERROR", "issues": 0})
-
-    # --- TABELLE ---
-    console.print("\n[bold magenta]Zusammenfassung des Batch-Jobs:[/bold magenta]")
-    table = Table(show_header=True, header_style="bold white")
-    table.add_column("Datei", style="dim", width=40)
-    table.add_column("Status", justify="center")
-    table.add_column("Fixes/Issues", justify="right")
-
-    for s in stats:
-        color = "green" if s["status"] in ["CLEANED", "AUTO_FIXED"] else "red"
-        if s["status"] == "NEEDS_REVIEW": color = "yellow"
+    for n in score.flatten().getElementsByClass(['Note', 'Rest', 'Chord']):
+        # Zwinge music21, den 'Type' (Viertel, Achtel...) komplett neu zu berechnen
+        n.duration.type = None 
+        n.duration.quarterLength = n.duration.quarterLength # Trigger für Neuberechnung
         
-        table.add_row(
-            s["file"], 
-            f"[{color}]{s['status']}[/{color}]", 
-            str(s["issues"])
-        )
+        # Falls es immer noch zu klein ist, auf 256stel aufrunden
+        if 0 < n.duration.quarterLength < 0.015625:
+            n.duration.quarterLength = 0.015625
+        
+        # WICHTIG: Tuplets (Triolenklammern) entfernen, wenn sie korrupt sind
+        if n.duration.quarterLength > 0:
+            n.duration.tuplets = [] 
 
-    console.print(table)
-    console.print(f"\n[bold green]Verarbeitung abgeschlossen.[/bold green]")
+@app.command()
+def main(
+    input: Path = typer.Option(Path("input"), "--input", "-i"),
+    output: Path = typer.Option(Path("output_cleaned"), "--output", "-o")
+):
+    review_path = Path("needs_review")
+    for p in [output, review_path]:
+        if not p.exists(): p.mkdir(parents=True)
+
+    files = [f for f in list(input.glob("*.*")) if f.suffix.lower() in [".xml", ".musicxml", ".mxl"]]
+    
+    analyzer = VoiceAnalyzer()
+    audit = AuditLogger()
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), console=console) as progress:
+        task = progress.add_task("Bearbeite...", total=len(files))
+
+        for file in files:
+            progress.update(task, description=f"Analysiere {file.name}")
+            temp_xml_path = "temp_preprocessing.xml"
+            
+            try:
+                # 1. Text-Reinigung (2048th -> 256th)
+                xml_data = load_robustly(file)
+                with open(temp_xml_path, "w", encoding="utf-8") as f:
+                    f.write(xml_data)
+                
+                # 2. Einlesen
+                score = converter.parse(temp_xml_path)
+                
+                # 3. Rhythmus-Wäsche (Die Nuklear-Option)
+                heavy_duty_fix(score)
+                
+                # 4. Analyse
+                issues = analyzer.process_score(score, file.name)
+                has_critical = any(i['type'] == "OVERFULL_MEASURE" for i in issues)
+                
+                # 5. Speichern
+                target_dir = review_path if has_critical else output
+                target_file = target_dir / f"{file.stem}.musicxml"
+                
+                # Versuch zu speichern
+                score.write('musicxml', fp=target_file)
+                audit.log(file.name, "CLEANED" if not has_critical else "NEEDS_REVIEW", len(issues), [])
+
+            except Exception as e:
+                # FALLBACK: Wenn music21 beim SCHREIBEN scheitert
+                console.print(f"[yellow]Warnung bei {file.name}: Music21 Export fehlgeschlagen. Nutze RAW-Safe.[/yellow]")
+                target_file = review_path / f"{file.stem}_RAW_FIXED.musicxml"
+                with open(target_file, "w", encoding="utf-8") as f:
+                    f.write(xml_data) # Wir speichern das vom Pre-Processor gereinigte XML
+                audit.log(file.name, "REVIEW_RAW", 0, [str(e)[:100]])
+            
+            finally:
+                if os.path.exists(temp_xml_path): os.remove(temp_xml_path)
+            
+            progress.advance(task)
+
+    console.print("\n[bold green]Batch abgeschlossen.[/bold green]")
+    audit.save_json(Path("audit_report.json"))
 
 if __name__ == "__main__":
-    # Benutze typer.run für maximale Kompatibilität ohne Unterbefehle
-    typer.run(main)
+    app()
