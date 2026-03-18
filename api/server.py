@@ -1,18 +1,19 @@
 import os
+import json
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
-
-# CORS für Browser-Zugriff
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Pfade berechnen
+# Pfade absolut berechnen
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
+REVIEW_DIR = BASE_DIR / "needs_review"
+CLEANED_DIR = BASE_DIR / "output_cleaned"
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
@@ -24,31 +25,33 @@ async def serve_index():
 @app.get("/files")
 async def list_files():
     file_list = []
-    # Ordner, die wir scannen
-    for folder_name in ["needs_review", "output_cleaned"]:
-        folder_path = BASE_DIR / folder_name
-        if folder_path.exists():
-            # Suche alle .xml und .musicxml Dateien
+    for folder in [REVIEW_DIR, CLEANED_DIR]:
+        if folder.exists():
             for pattern in ["*.xml", "*.musicxml"]:
-                for f in folder_path.glob(pattern):
-                    file_list.append({
-                        "name": f.name, 
-                        "folder": folder_name
-                    })
-    
-    # Ausgabe im Terminal zur Kontrolle
-    print(f"DEBUG: {len(file_list)} Dateien gefunden in {BASE_DIR}")
+                for f in folder.glob(pattern):
+                    file_list.append({"name": f.name, "folder": folder.name})
     return file_list
 
 @app.get("/file/{folder}/{filename}")
 async def get_file(folder: str, filename: str):
-    # Validierung des Ordnernamens
-    if folder not in ["needs_review", "output_cleaned"]:
-        raise HTTPException(status_code=400, detail="Ungültiger Ordner")
-        
     target = BASE_DIR / folder / filename
     if not target.exists():
-        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
-        
+        raise HTTPException(status_code=404)
     with open(target, "r", encoding="utf-8", errors="ignore") as f:
         return {"content": f.read()}
+
+@app.get("/report/{filename}")
+async def get_report(filename: str):
+    report_path = BASE_DIR / "audit_report.json"
+    if not report_path.exists(): return []
+    
+    # Tolerante Suche nach dem Dateinamen
+    base_search = filename.split('_RAW')[0].split('.musicxml')[0].split('.mxl')[0]
+    
+    with open(report_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        for entry in data:
+            entry_base = entry["file"].split('.mxl')[0].split('.musicxml')[0]
+            if base_search in entry_base or entry_base in base_search:
+                return entry["actions"] if isinstance(entry["actions"], list) else []
+    return []

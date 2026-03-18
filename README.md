@@ -1,33 +1,30 @@
-# MusicXML Sanitizer & Normalizer
+# MusicXML Sanitizer & Auditor
 
-Ein robustes Tool zur Aufbereitung von MusicXML-Dateien für barrierefreie Anwendungen (Großdruck und Braille-Konvertierung). Entwickelt in Kooperation mit Anforderungen der *dzb lesen*.
+Ein robustes Tool zur semantischen Reinigung, Fehlererkennung und Normalisierung von MusicXML-Dateien, speziell entwickelt für die Anforderungen der Barrierefreiheit (dzb lesen).
 
-## Features (Aktueller Stand)
-- **Robust Parsing**: Liest .xml, .musicxml und .mxl (komprimiert).
-- **Automatischer Fix**: Erkennt und korrigiert "unmögliche" Notenwerte (z.B. 2048stel), die zum Absturz in Notensatzprogrammen führen.
-- **Takt-Analyse**: Identifiziert übervolle oder unvollständige Takte.
-- **Web-Review**: Eine Web-Oberfläche (Verovio) zur visuellen Prüfung von Problemstellen.
-- **Audit-Log**: Automatische Einsortierung in `output_cleaned` oder `needs_review`.
+## Aktueller Funktionsumfang (PoC Phase 1)
 
-## Installation
-1. Repository klonen
-2. Abhängigkeiten installieren:
-   ```bash
-   pip install music21 lxml typer rich fastapi uvicorn python-multipart
+- Robustes Pre-Processing: Repariert kritische MusicXML-Exportfehler (z.B. mathematisch ungültige 2048stel-Noten) auf Textebene, bevor sie die Musik-Engine erreichen.
+- Takt-Analyse: Erkennt übervolle Takte und "hineinfabulierte" Pausen (Filler Rests) durch eine Voice-Slice-Analyse.
+- Audit-Logging: Generiert einen detaillierten JSON-Report (audit_report.json) über alle gefundenen Probleme und vorgenommenen Korrekturen.
+- Web-UI Review Queue: Visualisierung der Noten mit Verovio (WASM), geteilte Sidebar mit Dateiliste und dynamischer Problemliste pro Datei.
+- RAW-Safe Fallback: Stellt sicher, dass selbst bei komplexesten Dateien (wie Beethoven) ein bereinigtes XML für die Sichtprüfung erhalten bleibt.
 
-## Nutzung
-1. Batch-Verarbeitung (CLI)
-Lege deine Dateien in den Ordner input und starte:
-python cli.py --input input
-Die Ergebnisse landen in output_cleaned (sauber) oder needs_review (manuelle Prüfung nötig).
-2. Web-UI (Review Queue)
-Starte das Backend:
-uvicorn api.server:app --reload
-Öffne dann die webapp/index.html in deinem Browser.
-## Roadmap / TODO
+## Installation & Start
 
-1. SATB-Normalisierung: Automatisches Aufspalten von 2-System-Chorsätzen in 4-System-SATB.
+1. Abhängigkeiten installieren:
+   python -m pip install typer rich music21 lxml fastapi uvicorn
 
-2. Shift-Left Algorithmus: Aktive rhythmische Korrektur durch Entfernen von Geister-Pausen.
+2. CLI Batch-Processing:
+   Lege MusicXML/MXL Dateien in den Ordner input/ und starte:
+   python cli.py --input input
 
-3. Braille-Profil: Radikale Entfernung aller visuellen Layout-Tags für optimierten Braille-Export.
+3. Web-UI starten:
+   python -m uvicorn api.server:app --port 8001
+   Öffne http://127.0.0.1:8001 im Browser.
+
+## Projektstruktur
+- core/pre_processor.py: XML-Reparatur auf Textebene.
+- core/voice_analyzer.py: Musikalische Logikprüfung.
+- api/server.py: Backend für die Web-Vorschau.
+- static/index.html: Frontend mit Verovio-Integration.

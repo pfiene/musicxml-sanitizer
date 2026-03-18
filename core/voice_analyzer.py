@@ -1,47 +1,61 @@
-from music21 import duration
+from music21 import stream, note, duration
 
 class VoiceAnalyzer:
-    def sanitize_durations(self, score):
-        """
-        Bereinigt mathematisch zu kleine Notenwerte, die den Export verhindern.
-        """
-        # Ein 256stel ist 1/64 eines Viertels (0.015625)
-        min_ql = 0.015625 
-        fixes = 0
-        
-        # Wir gehen durch alle Noten, Pausen und Akkorde
-        for el in score.flatten().notesAndRests:
-            # Wenn die Note zu kurz ist (aber nicht 0, wie bei manchen Grace Notes)
-            if 0 < el.duration.quarterLength < min_ql:
-                # 1. Mathematische Dauer auf 256stel setzen
-                el.duration.quarterLength = min_ql
-                # 2. Den Typ explizit erzwingen, damit music21 nicht neu rechnet
-                el.duration.type = '256th'
-                # 3. Falls Tuplets (Triolen etc.) dran hängen, die zu klein sind, entfernen
-                el.duration.tuplets = ()
-                fixes += 1
-        return fixes
+    def __init__(self):
+        self.audit_trail = []
 
-    def process_score(self, score):
+    def analyze_measure(self, m, part_name, file_name):
+        """Analysiert einen einzelnen Takt."""
+        expected = m.barDuration.quarterLength
+        actual = m.duration.quarterLength
+        issues = []
+        
+        # 1. Suche nach überlappenden Pausen (Filler Rests)
+        offsets = {}
+        for el in m.flatten().notesAndRests:
+            if el.offset not in offsets:
+                offsets[el.offset] = []
+            offsets[el.offset].append(el)
+
+        for offset, elements in offsets.items():
+            if len(elements) > 1:
+                rests = [e for e in elements if e.isRest]
+                notes = [e for e in elements if e.isNote]
+                if rests and notes:
+                    issues.append({
+                        "type": "FILLER_REST",
+                        "measure": m.measureNumber,
+                        "part": part_name,
+                        "offset": float(offset)
+                    })
+
+        # 2. Takt-Bilanz prüfen (mit Toleranz)
+        tolerance = 0.02
+        if actual > (expected + tolerance):
+            issues.append({
+                "type": "OVERFULL_MEASURE",
+                "measure": m.measureNumber,
+                "part": part_name,
+                "actual": round(float(actual), 3),
+                "expected": float(expected)
+            })
+            
+        return issues
+
+    def process_score(self, score, file_name):
         all_issues = []
+        # Wir zählen ALLE Takte in der gesamten Datei global durch
+        global_measure_idx = 0
         
-        # Schritt 1: Radikale Sanierung der Dauern (verhindert den WRITE_ERROR)
-        fixes = self.sanitize_durations(score)
-        if fixes > 0:
-            all_issues.append({"type": "AUTO_FIXED", "msg": f"{fixes} Notenwerte begradigt."})
-        
-        # Schritt 2: Taktprüfung
         for p in score.parts:
+            p_id = p.id
             for m in p.getElementsByClass('Measure'):
-                if m.measureNumber <= 0: continue
-                try:
-                    expected = m.barDuration.quarterLength
-                    actual = m.duration.quarterLength
-                    
-                    if abs(actual - expected) > 0.1: # Toleranz erhöht
-                        all_issues.append({"type": "OVERFULL", "measure": m.measureNumber})
-                        for n in m.flatten().notes:
-                            n.style.color = '#FF0000'
-                except:
-                    continue
+                global_measure_idx += 1
+                issues = self.analyze_measure(m, p_id, file_name)
+                
+                # Wir verknüpfen jedes Problem mit der globalen Index-ID
+                for issue in issues:
+                    issue['xml_id'] = f"m-idx-{global_measure_idx}"
+                all_issues.extend(issues)
+        
         return all_issues
