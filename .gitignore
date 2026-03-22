@@ -1,19 +1,25 @@
-# Python-Müll ignorieren
+# Python-Cache
 __pycache__/
 *.py[cod]
-*$py.class
 
-# Daten-Ordner ignorieren (nur die Ordnerstruktur behalten, nicht den Inhalt)
+# Ordner-Inhalte ignorieren, aber Ordner selbst behalten
 input/*
-needs_review/*
-reports/*
-output/*
-output_cleaned/*
-
-# Aber die Ordner selbst behalten (dafür legen wir oft eine .gitkeep rein)
 !input/.gitkeep
+
+needs_review/*
 !needs_review/.gitkeep
+
+reports/*
 !reports/.gitkeep
+
+output/*
+!output/.gitkeep
+
+output_cleaned/*
+!output_cleaned/.gitkeep
+
+# Globale Report-Datei ignorieren
+audit_report.json
 
 # System-Dateien
 .DS_Store
