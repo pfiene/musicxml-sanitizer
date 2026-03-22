@@ -1,0 +1,20 @@
+# Python-Müll ignorieren
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Daten-Ordner ignorieren (nur die Ordnerstruktur behalten, nicht den Inhalt)
+input/*
+needs_review/*
+reports/*
+output/*
+output_cleaned/*
+
+# Aber die Ordner selbst behalten (dafür legen wir oft eine .gitkeep rein)
+!input/.gitkeep
+!needs_review/.gitkeep
+!reports/.gitkeep
+
+# System-Dateien
+.DS_Store
+Thumbs.db
