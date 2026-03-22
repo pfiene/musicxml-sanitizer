@@ -2,30 +2,39 @@ import re
 import zipfile
 
 def clean_raw_xml(xml_string):
-    # 1. Rhythmus-Fixes
+    """Bereinigt MusicXML und setzt stabile IDs."""
+    if not xml_string: return ""
+    
+    # Rhythmus-Fixes
     xml_string = xml_string.replace("<type>2048th</type>", "<type>256th</type>")
     xml_string = xml_string.replace("<type>1024th</type>", "<type>256th</type>")
     
-    # 2. Globaler Takt-Zähler (ignoriert Sätze/Movements)
-    count = 0
-    def id_replacer(match):
-        nonlocal count
-        count += 1
-        # Wir setzen eine absolut eindeutige ID: m-idx-1, m-idx-2...
-        return f'<measure xml:id="m-idx-{count}"'
+    # ID-Salat entfernen
+    xml_string = re.sub(r'(<measure[^>]*?)\s+(?:xml:)?id="[^"]*"', r'\1', xml_string)
 
-    # Ersetzt den Anfang jedes <measure ... Tags
-    xml_string = re.sub(r'<measure', id_replacer, xml_string)
-    
+    # Stabile IDs setzen
+    count = [0]
+    def inject_id(match):
+        count[0] += 1
+        return f'<measure id="m-idx-{count[0]}" '
+
+    xml_string = re.sub(r'<measure\s*', inject_id, xml_string)
     return xml_string
 
 def load_robustly(filepath):
+    """Lädt .mxl oder .musicxml aus dem Dateisystem."""
+    content = ""
     try:
         if str(filepath).lower().endswith('.mxl'):
             with zipfile.ZipFile(filepath, 'r') as z:
                 for name in z.namelist():
                     if name.endswith('.xml') and "container" not in name:
-                        return clean_raw_xml(z.read(name).decode('utf-8', errors='ignore'))
-    except: pass
-    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-        return clean_raw_xml(f.read())
+                        content = z.read(name).decode('utf-8', errors='ignore')
+                        break
+        else:
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+    except Exception as e:
+        print(f"Fehler in core.pre_processor: {e}")
+        return ""
+    return clean_raw_xml(content)

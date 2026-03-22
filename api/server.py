@@ -1,57 +1,83 @@
+import sys
 import os
 import json
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+# --- PFAD-LOGIK ---
+current_file_path = Path(__file__).resolve()
+root_dir = current_file_path.parent.parent
+core_dir = root_dir / "core"
+
+# Den core-Ordner für den Preprocessor erreichbar machen
+if str(core_dir) not in sys.path:
+    sys.path.insert(0, str(core_dir))
+
+import pre_processor # Importiert D:\$Entwicklung\musicxml-sanitizer\core\pre_processor.py
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Pfade absolut berechnen
-BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "static"
-INDEX_FILE = STATIC_DIR / "index.html"
-REVIEW_DIR = BASE_DIR / "needs_review"
-CLEANED_DIR = BASE_DIR / "output_cleaned"
+# Ordner-Definitionen
+MUSIC_FOLDERS = ["needs_review", "input", "output", "processed"] 
+STATIC_DIR = root_dir / "static"
+GLOBAL_REPORT_FILE = root_dir / "audit_report.json" # <--- HIER liegt dein Report
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_index():
-    if not INDEX_FILE.exists():
-        return f"<h1>Fehler</h1><p>index.html nicht gefunden in: {INDEX_FILE}</p>"
-    with open(INDEX_FILE, "r", encoding="utf-8") as f:
-        return f.read()
+# Statische Dateien (Frontend)
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+@app.get("/")
+async def get_index():
+    return FileResponse(str(STATIC_DIR / "index.html"))
 
 @app.get("/files")
 async def list_files():
-    file_list = []
-    for folder in [REVIEW_DIR, CLEANED_DIR]:
-        if folder.exists():
-            for pattern in ["*.xml", "*.musicxml"]:
-                for f in folder.glob(pattern):
-                    file_list.append({"name": f.name, "folder": folder.name})
-    return file_list
+    """Listet alle gefundenen Musikdateien auf."""
+    files = []
+    for folder_name in MUSIC_FOLDERS:
+        folder_path = root_dir / folder_name
+        if folder_path.exists():
+            for item in folder_path.iterdir():
+                if item.suffix.lower() in [".xml", ".musicxml", ".mxl"]:
+                    files.append({"name": item.name, "folder": folder_name})
+    return files
 
-@app.get("/file/{folder}/{filename}")
-async def get_file(folder: str, filename: str):
-    target = BASE_DIR / folder / filename
-    if not target.exists():
-        raise HTTPException(status_code=404)
-    with open(target, "r", encoding="utf-8", errors="ignore") as f:
-        return {"content": f.read()}
+@app.get("/file/{folder}/{name}")
+async def get_music_file(folder: str, name: str):
+    """Lädt die Datei und wendet den Pre-Processor an."""
+    file_path = root_dir / folder / name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Datei nicht gefunden")
+    
+    # Nutzt core/pre_processor.py
+    content = pre_processor.load_robustly(str(file_path))
+    return {"name": name, "content": content}
 
-@app.get("/report/{filename}")
-async def get_report(filename: str):
-    report_path = BASE_DIR / "audit_report.json"
-    if not report_path.exists(): return []
+@app.get("/report/{name}")
+async def get_audit_report(name: str):
+    """Lädt die Issues aus der zentralen audit_report.json."""
+    if GLOBAL_REPORT_FILE.exists():
+        print(f"--- Lade globalen Report: {GLOBAL_REPORT_FILE} ---")
+        try:
+            with open(GLOBAL_REPORT_FILE, "r", encoding="utf-8") as f:
+                report_data = json.load(f)
+                
+                # Falls der Report ein Dictionary ist, das Dateinamen als Keys nutzt:
+                if isinstance(report_data, dict) and name in report_data:
+                    return report_data[name]
+                
+                # Falls der Report eine einfache Liste von Issues ist (vom letzten Lauf):
+                return report_data
+        except Exception as e:
+            print(f"Fehler beim Lesen des Reports: {e}")
+            return []
     
-    # Tolerante Suche nach dem Dateinamen
-    base_search = filename.split('_RAW')[0].split('.musicxml')[0].split('.mxl')[0]
-    
-    with open(report_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-        for entry in data:
-            entry_base = entry["file"].split('.mxl')[0].split('.musicxml')[0]
-            if base_search in entry_base or entry_base in base_search:
-                return entry["actions"] if isinstance(entry["actions"], list) else []
+    print(f"WARNUNG: {GLOBAL_REPORT_FILE} nicht gefunden.")
     return []
+
+if __name__ == "__main__":
+    import uvicorn
+    print(f"Server läuft auf http://127.0.0.1:8001")
+    uvicorn.run(app, host="127.0.0.1", port=8001)

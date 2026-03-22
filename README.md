@@ -2,13 +2,20 @@
 
 Ein robustes Tool zur semantischen Reinigung, Fehlererkennung und Normalisierung von MusicXML-Dateien, speziell entwickelt für die Anforderungen der Barrierefreiheit (dzb lesen).
 
-## Aktueller Funktionsumfang (PoC Phase 1)
+## Aktueller Status (Stand: heute)
+*   **Backend:** FastAPI Server läuft auf Port 8001. Er lädt MusicXML/MXL Dateien und wendet einen Pre-Processor an.
+*   **Pre-Processor:** Injektion von stabilen IDs (`m-idx-X`) in `<measure>` Tags zur Identifikation im Frontend.
+*   **Frontend:** Verovio-WASM Integration mit MEI-basierter Navigation.
+*   **Navigation:** Gelöst! Große Dateien (Beethoven, 19 Seiten) werden nun präzise durchsucht. Die UI analysiert das interne MEI-Modell von Verovio, um die korrekte Seite für den Takt-Sprung zu finden (getMEI-Analyse).
 
-- Robustes Pre-Processing: Repariert kritische MusicXML-Exportfehler (z.B. mathematisch ungültige 2048stel-Noten) auf Textebene, bevor sie die Musik-Engine erreichen.
-- Takt-Analyse: Erkennt übervolle Takte und "hineinfabulierte" Pausen (Filler Rests) durch eine Voice-Slice-Analyse.
-- Audit-Logging: Generiert einen detaillierten JSON-Report (audit_report.json) über alle gefundenen Probleme und vorgenommenen Korrekturen.
-- Web-UI Review Queue: Visualisierung der Noten mit Verovio (WASM), geteilte Sidebar mit Dateiliste und dynamischer Problemliste pro Datei.
-- RAW-Safe Fallback: Stellt sicher, dass selbst bei komplexesten Dateien (wie Beethoven) ein bereinigtes XML für die Sichtprüfung erhalten bleibt.
+## Bekannte Probleme / Next Steps
+*   **Stichnoten-Audit:** Auditor erkennt übervolle Takte durch kleine Notenköpfe (Grace-Notes mit falscher Duration). 
+*   **Fix-Modus:** Implementierung eines "Heilungs-Buttons", um verdächtige Noten im XML zu `<grace/>` Tags mit Duration 0 zu konvertieren.
+*   **Report-Mapping:** Die UI zeigt aktuell noch "Unbekannter Fehler", da die JSON-Struktur (`file`, `status`, `issues`, `actions`) im Frontend gemappt werden muss.
+
+## Starten
+1. Server: `python api/server.py` oder `uvicorn api.server:app --port 8001`
+2. Browser: `http://127.0.0.1:8001`
 
 ## Installation & Start
 

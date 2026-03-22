@@ -2,11 +2,11 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>MusicXML Sanitizer Preview</title>
+    <title>MusicXML Sanitizer & Auditor</title>
     <script src="https://www.verovio.org/javascript/latest/verovio-toolkit-wasm.js" defer></script>
     <style>
         :root { --dark: #2c3e50; --accent: #e74c3c; --sidebar: #ffffff; --viewer: #cbd3da; }
-        body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; background: #f4f4f4; }
+        body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; background: #f4f4f4; overflow: hidden; }
         
         header { background: var(--dark); color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.3); z-index: 100; }
         .nav-controls { display: flex; align-items: center; gap: 15px; }
@@ -16,19 +16,24 @@
         #sidebar { width: 380px; display: flex; flex-direction: column; border-right: 2px solid #ccc; background: var(--sidebar); }
         .sidebar-header { background: #eee; padding: 8px 15px; font-weight: bold; font-size: 0.85em; border-bottom: 1px solid #ddd; text-transform: uppercase; color: #666; }
         .scroll-area { flex: 1; overflow-y: auto; padding: 10px; }
-        #file-list { height: 35%; border-bottom: 2px solid #ddd; }
-        #issue-list { height: 40%; background: #fffdfa; }
+        
+        #file-list { height: 30%; border-bottom: 2px solid #ddd; }
+        #issue-list { height: 45%; background: #fffdfa; }
 
-        .file-item { padding: 8px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-item { padding: 8px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.85em; }
         .file-item:hover { background: #eef7ff; }
-        .issue-card { background: white; border: 1px solid #f39c12; padding: 10px; margin-bottom: 8px; border-radius: 5px; cursor: pointer; transition: 0.2s; }
-        .issue-card:hover { background: #fff9e6; border-color: #e67e22; transform: translateX(5px); }
-        .issue-card strong { color: #d35400; font-size: 0.9em; display: block; }
+        
+        .issue-card { background: white; border: 1px solid #f39c12; padding: 10px; margin-bottom: 8px; border-radius: 5px; cursor: pointer; border-left: 4px solid #f39c12; }
+        .issue-card:hover { background: #fff9e6; transform: translateX(5px); transition: 0.2s; }
+        .issue-card strong { color: #d35400; display: block; }
 
-        #viewer-container { flex: 1; overflow: auto; padding: 30px; background: var(--viewer); display: flex; justify-content: center; }
-        #notation { background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 40px; min-width: 800px; }
+        #viewer-container { flex: 1; overflow: auto; padding: 20px; background: var(--viewer); display: flex; justify-content: center; }
+        #notation { background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 20px; min-width: 800px; }
 
         #debug-console { height: 120px; background: #222; color: #00ff00; font-family: monospace; font-size: 11px; padding: 10px; overflow-y: auto; border-top: 2px solid #000; }
+        
+        /* Markierung für den Takt */
+        .highlight { fill: #e74c3c !important; stroke: #e74c3c !important; stroke-width: 2px; }
     </style>
 </head>
 <body>
@@ -37,7 +42,7 @@
     <div><strong>dzb lesen</strong> | MusicXML Auditor</div>
     <div class="nav-controls">
         <button class="btn-nav" onclick="changePage(-1)">◀</button>
-        <span id="page-info" style="min-width: 100px; text-align: center; font-weight: bold;">Initialisiere...</span>
+        <span id="page-info" style="min-width: 100px; text-align: center;">Lade...</span>
         <button class="btn-nav" onclick="changePage(1)">▶</button>
     </div>
     <div id="status" style="font-size: 0.8em; opacity: 0.7;">Warte auf WASM...</div>
@@ -48,7 +53,7 @@
         <div class="sidebar-header">Dateien</div>
         <div id="file-list" class="scroll-area">Lade Liste...</div>
         
-        <div class="sidebar-header" style="color: #d35400;">Probleme (Klick zum Sprung)</div>
+        <div class="sidebar-header" style="color: #d35400;">Audit Probleme</div>
         <div id="issue-list" class="scroll-area">Wähle eine Datei.</div>
         
         <div id="debug-console">System-Log bereit...</div>
@@ -75,11 +80,178 @@
     document.addEventListener("DOMContentLoaded", () => {
         verovio.module.onRuntimeInitialized = () => {
             vrvToolkit = new verovio.toolkit();
-            document.getElementById("status").innerText = "Toolkit bereit.";
-            log("Verovio initialisiert.");
+            // Die Optionen wurden in neueren Versionen verschoben
+            vrvToolkit.setOptions({
+                pageWidth: 2100,
+                scale: 45,
+                header: 'none',
+                footer: 'none',
+                adjustPageHeight: true,
+                xmlId: true  // Das ist die moderne Form von useXMLId
+            });
+            log("Verovio initialisiert & Optionen gesetzt.");
             loadFileList();
         };
     });
+
+    async function loadFile(folder, name) {
+        log(`Lade ${name}...`);
+        try {
+            const res = await fetch(`/file/${folder}/${name}`);
+            const xml = await res.json();
+            
+            vrvToolkit.loadData(xml.content);
+            vrvToolkit.redoLayout();
+            
+            totalPages = vrvToolkit.getPageCount();
+            currentPage = 1;
+
+            const reportRes = await fetch(`/report/${name}`);
+            const issues = await reportRes.json();
+            displayIssues(issues);
+            render();
+            
+            // DIAGNOSE: Was hat Verovio geladen?
+            debugFirstMeasure();
+            
+            log(`Datei geladen. ${totalPages} Seiten.`);
+        } catch (err) { log("Ladefehler!"); }
+    }
+
+    // Hilfsfunktion: Schaut nach, wie die IDs wirklich aussehen
+    function debugFirstMeasure() {
+        try {
+            const mei = vrvToolkit.getMEI({pageNo: 1, scoreBased: true});
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(mei, "text/xml");
+            const firstMeasure = xmlDoc.getElementsByTagName("measure")[0];
+            if (firstMeasure) {
+                log(`DIAGNOSE: Erster Takt ID im MEI: ${firstMeasure.getAttribute("xml:id")}`);
+                log(`DIAGNOSE: Erster Takt Nummer: ${firstMeasure.getAttribute("n")}`);
+            }
+        } catch (e) { console.error("Diagnose fehlgeschlagen", e); }
+    }
+
+    function jumpTo(measureNum) {
+        log(`Suche Takt ${measureNum} via MEI-Analyse...`);
+        
+        try {
+            // Wir holen uns das komplette MEI-Modell, um die echte ID zu finden
+            const mei = vrvToolkit.getMEI({scoreBased: true});
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(mei, "text/xml");
+            
+            // Suche den Takt mit n="measureNum"
+            const measures = xmlDoc.getElementsByTagName("measure");
+            let realId = null;
+            
+            for (let m of measures) {
+                if (m.getAttribute("n") === String(measureNum)) {
+                    realId = m.getAttribute("xml:id");
+                    break; // Wir nehmen den ersten Treffer (meist Rechte Hand)
+                }
+            }
+
+            if (realId) {
+                log(`Echte ID gefunden: ${realId}`);
+                const page = vrvToolkit.getPageWithElement(realId);
+                
+                if (page > 0) {
+                    currentPage = page;
+                    render();
+                    
+                    setTimeout(() => {
+                        const el = document.getElementById(realId);
+                        if (el) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            el.style.fill = "red";
+                            el.style.outline = "5px solid red";
+                            log(`Erfolgreich zu Seite ${page} gesprungen.`);
+                        }
+                    }, 100);
+                } else {
+                    log(`Fehler: ID ${realId} ist keiner Seite zugeordnet.`);
+                }
+            } else {
+                log(`Fehler: Taktnummer ${measureNum} nicht im MEI gefunden.`);
+            }
+        } catch (err) {
+            log("Nav-Fehler: " + err.message);
+        }
+    }
+
+    // Restliche Funktionen (render, changePage, displayIssues) wie gehabt...
+function displayIssues(data) {
+    const container = document.getElementById("issue-list");
+    container.innerHTML = "";
+    
+    // FIX: Dein JSON hat die Struktur { issues: [...] }
+    const issues = data.issues || (Array.isArray(data) ? data : []);
+    
+    if (issues.length === 0) {
+        container.innerHTML = "<p style='padding:10px;'>Keine Issues im Report gefunden.</p>";
+        return;
+    }
+    // ... restlicher Code wie vorhin
+    // DIAGNOSE: Was steckt im ersten Issue?
+    log(`DIAGNOSE: Erster Issue-Eintrag Keys: ${Object.keys(issues[0]).join(", ")}`);
+
+    issues.forEach(issue => {
+        const card = document.createElement("div");
+        card.className = "issue-card";
+        
+        // Flexibles Auslesen der Taktnummer
+        const mNum = issue.measure || issue.measure_num || issue.measure_idx || "??";
+        
+        // Flexibles Auslesen der Fehlermeldung
+        const mType = issue.type || issue.message || issue.issue_type || "Unbekannter Fehler";
+        
+        // Flexibles Auslesen der ID (falls vorhanden)
+        const xmlId = issue.xml_id || issue.id || "";
+
+        card.innerHTML = `<strong>Takt ${mNum}: ${mType}</strong><small>${xmlId}</small>`;
+        
+        // Beim Klick springen wir zum Takt
+        card.onclick = () => jumpTo(mNum);
+        
+        container.appendChild(card);
+    });
+}
+
+async function applyFix(action, params) {
+    log(`Sende Heilungs-Anfrage: ${action}...`);
+    try {
+        const res = await fetch('/apply-fix', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                file_name: currentFileName,
+                action: action,
+                params: params
+            })
+        });
+        const result = await res.json();
+        if (result.success) {
+            log("Takt geheilt! Lade Datei neu...");
+            // Datei neu laden, um das Ergebnis zu sehen
+            loadFile('needs_review', currentFileName); 
+        }
+    } catch (e) { log("Heilung fehlgeschlagen."); }
+}
+
+    function render() {
+        const svg = vrvToolkit.renderToSVG(currentPage);
+        document.getElementById("notation").innerHTML = svg;
+        document.getElementById("page-info").innerText = `Seite ${currentPage} / ${totalPages}`;
+    }
+
+    function changePage(delta) {
+        if (currentPage + delta >= 1 && currentPage + delta <= totalPages) {
+            currentPage += delta;
+            render();
+            document.getElementById("viewer-container").scrollTop = 0;
+        }
+    }
 
     async function loadFileList() {
         try {
@@ -90,105 +262,12 @@
             files.forEach(f => {
                 const div = document.createElement("div");
                 div.className = "file-item";
-                const icon = f.folder === 'needs_review' ? '🔴' : '🟢';
-                div.innerHTML = `${icon} ${f.name}`;
+                div.innerHTML = (f.folder === 'needs_review' ? '🔴 ' : '🟢 ') + f.name;
                 div.onclick = () => loadFile(f.folder, f.name);
                 container.appendChild(div);
             });
-            log(`${files.length} Dateien in der Liste.`);
-        } catch (e) { log("FEHLER beim Laden der Dateiliste."); }
+        } catch (e) { log("Fehler Dateiliste."); }
     }
-
-    async function loadFile(folder, name) {
-        log(`Lade ${name}...`);
-        try {
-            const res = await fetch(`/file/${folder}/${name}`);
-            const xml = await res.json();
-            
-            vrvToolkit.setOptions({
-                pageWidth: 2100, scale: 45, adjustPageHeight: 1,
-                noFooter: 1, noHeader: 1, useXMLId: true 
-            });
-            
-            vrvToolkit.loadData(xml.content);
-            totalPages = vrvToolkit.getPageCount();
-            currentPage = 1;
-
-            const reportRes = await fetch(`/report/${name}`);
-            const issues = await reportRes.json();
-            displayIssues(issues);
-            render();
-            log(`${name}: ${totalPages} Seiten geladen.`);
-        } catch (err) { log("FEHLER beim Laden der Musikdatei!"); }
-    }
-
-    function displayIssues(issues) {
-        const container = document.getElementById("issue-list");
-        container.innerHTML = "";
-        if (!issues || issues.length === 0 || typeof issues[0] === 'string') {
-            container.innerHTML = "<p style='color:gray; padding:10px;'>Keine Taktfehler erkannt.</p>";
-            return;
-        }
-        issues.forEach(issue => {
-            const card = document.createElement("div");
-            card.className = "issue-card";
-            card.innerHTML = `<strong>Takt ${issue.measure}: ${issue.type}</strong><small>Klicke zum Springen (ID: ${issue.xml_id})</small>`;
-            card.onclick = () => jumpTo(issue.xml_id, issue.measure);
-            container.appendChild(card);
-        });
-        log(`${issues.length} Probleme geladen.`);
-    }
-
-    function jumpTo(xmlId, measureNum) {
-        log(`Anfrage: Sprung zu ${xmlId} (Takt ${measureNum})`);
-        
-        try {
-            // Wir fragen Verovio nach der Seite für unsere Index-ID
-            let page = vrvToolkit.getPageNumberForElement(xmlId);
-            
-            if (page > 0) {
-                log(`Erfolg: ID auf Seite ${page} lokalisiert.`);
-                currentPage = page;
-                render();
-                
-                // Takt im Bild markieren
-                setTimeout(() => {
-                    // Wir suchen das Element mit der xml:id im SVG
-                    const el = document.getElementById(xmlId);
-                    if (el) {
-                        el.style.outline = "10px solid #e74c3c";
-                        el.style.outlineOffset = "5px";
-                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        log("Takt markiert.");
-                    }
-                }, 200);
-            } else {
-                log(`HINWEIS: ID ${xmlId} nicht im aktuellen Seiten-Index.`);
-                alert(`Takt ${measureNum} konnte nicht angesprungen werden.`);
-            }
-        } catch (err) {
-            log("KRITISCHER FEHLER beim Toolkit-Sprung!");
-            console.error(err);
-        }
-    }
-
-    function render() {
-        document.getElementById("notation").innerHTML = vrvToolkit.renderToSVG(currentPage);
-        document.getElementById("page-info").innerText = `Seite ${currentPage} / ${totalPages}`;
-        document.getElementById("status").innerText = "Bereit.";
-    }
-
-    function changePage(delta) {
-        if (currentPage + delta >= 1 && currentPage + delta <= totalPages) {
-            currentPage += delta;
-            render();
-        }
-    }
-
-    window.onkeydown = (e) => {
-        if (e.key === "ArrowRight") changePage(1);
-        if (e.key === "ArrowLeft") changePage(-1);
-    };
 </script>
 
 </body>
