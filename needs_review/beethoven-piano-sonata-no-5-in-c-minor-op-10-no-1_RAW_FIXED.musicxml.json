@@ -1,0 +1,72 @@
+{
+    "file": "beethoven-piano-sonata-no-5-in-c-minor-op-10-no-1_RAW_FIXED.musicxml",
+    "status": "REVIEW_REQUIRED",
+    "actions": [
+        {
+            "type": "OVERFULL_MEASURE",
+            "measure": 511,
+            "part": "P1-Staff1",
+            "actual": 6.0,
+            "expected": 4.0,
+            "xml_id": "m-idx-511"
+        },
+        {
+            "type": "FILLER_REST",
+            "measure": 420,
+            "part": "P1-Staff2",
+            "offset": 0.0,
+            "xml_id": "m-idx-940"
+        },
+        {
+            "type": "FILLER_REST",
+            "measure": 422,
+            "part": "P1-Staff2",
+            "offset": 0.0,
+            "xml_id": "m-idx-942"
+        },
+        {
+            "type": "FILLER_REST",
+            "measure": 478,
+            "part": "P1-Staff2",
+            "offset": 0.0,
+            "xml_id": "m-idx-998"
+        },
+        {
+            "type": "FILLER_REST",
+            "measure": 480,
+            "part": "P1-Staff2",
+            "offset": 0.0,
+            "xml_id": "m-idx-1000"
+        },
+        {
+            "type": "FILLER_REST",
+            "measure": 511,
+            "part": "P1-Staff2",
+            "offset": 0.0,
+            "xml_id": "m-idx-1031"
+        },
+        {
+            "type": "FILLER_REST",
+            "measure": 511,
+            "part": "P1-Staff2",
+            "offset": 1.0,
+            "xml_id": "m-idx-1031"
+        },
+        {
+            "type": "OVERFULL_MEASURE",
+            "measure": 511,
+            "part": "P1-Staff2",
+            "actual": 6.0,
+            "expected": 4.0,
+            "xml_id": "m-idx-1031"
+        },
+        {
+            "type": "OVERFULL_MEASURE",
+            "measure": 512,
+            "part": "P1-Staff2",
+            "actual": 6.006,
+            "expected": 4.0,
+            "xml_id": "m-idx-1032"
+        }
+    ]
+}

@@ -1,122 +1,114 @@
 import os
 import json
-import warnings
+import sys
 from pathlib import Path
-import typer
-from rich.console import Console
-from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
-
-# 1. Warnungen unterdrücken
-warnings.filterwarnings("ignore")
-
-# 2. Unsere Module laden
-from core.voice_analyzer import VoiceAnalyzer
-from core.pre_processor import load_robustly
 from music21 import converter
 
-app = typer.Typer()
-console = Console()
+# =================================================================
+# PFAD-LOGIK: Wir stellen sicher, dass 'core' gefunden wird
+# =================================================================
+root_dir = Path(__file__).resolve().parent
+core_dir = root_dir / "core"
 
-class AuditLogger:
-    def __init__(self):
-        self.stats = []
+if str(core_dir) not in sys.path:
+    sys.path.insert(0, str(core_dir))
 
-    def log(self, file: str, status: str, issues_list: list):
-        self.stats.append({
-            "file": file,
-            "status": status,
-            "issues": len(issues_list),
-            "actions": issues_list
-        })
+# Importiere deine Module aus dem core-Ordner
+try:
+    import pre_processor
+    from voice_analyzer import VoiceAnalyzer 
+except ImportError as e:
+    print(f"FEHLER beim Laden der Core-Module: {e}")
+    sys.exit(1)
 
-    def save_json(self, path: Path):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.stats, f, indent=4)
+def run_pipeline():
+    # Verzeichnisse definieren
+    input_folder = root_dir / "input"
+    output_folder = root_dir / "needs_review"
+    output_folder.mkdir(exist_ok=True)
 
-def simple_safe_fix(score):
-    """
-    Ein minimalistischer Fix, der keine Typen auf None setzt, 
-    sondern nur mathematische Grenzwerte erzwingt.
-    """
-    for n in score.flatten().getElementsByClass(['Note', 'Rest', 'Chord']):
-        # Wenn die Dauer extrem klein ist, auf ein 256stel setzen
-        if 0 < n.duration.quarterLength < 0.015625:
-            n.duration.quarterLength = 0.015625
-        # Wir fassen den 'type' hier NICHT manuell an, um Abstürze zu vermeiden
+    print("--- Start MusicXML Sanitizer & Auditor Pipeline ---")
 
-@app.command()
-def main(
-    input: Path = typer.Option(Path("input"), "--input", "-i"),
-    output: Path = typer.Option(Path("output_cleaned"), "--output", "-o")
-):
-    review_path = Path("needs_review")
-    for p in [output, review_path]:
-        if not p.exists(): p.mkdir(parents=True)
+    # Suche nach Musikdateien (.mxl, .musicxml, .xml)
+    files = []
+    for ext in ["*.mxl", "*.musicxml", "*.xml"]:
+        files.extend(list(input_folder.glob(ext)))
+    
+    if not files:
+        print(f"Keine Dateien in {input_folder} gefunden!")
+        return
 
-    files = [f for f in list(input.glob("*.*")) if f.suffix.lower() in [".xml", ".musicxml", ".mxl"]]
-    analyzer = VoiceAnalyzer()
-    audit = AuditLogger()
+    for file_path in files:
+        print(f"\n>>> Verarbeite: {file_path.name}")
+        
+        # ---------------------------------------------------------
+        # SCHRITT 1: SANITIZER (Heilung & Pre-Processing)
+        # ---------------------------------------------------------
+        print("-> Starte Sanitizer (Voice Merge & Rhythm Fix)...")
+        cleaned_xml_content = pre_processor.load_robustly(str(file_path))
+        
+        # Hole das Protokoll der automatischen Heilungen
+        healing_log = pre_processor.get_last_log()
+        
+        if not cleaned_xml_content:
+            print("   FEHLER: Datei konnte nicht verarbeitet werden.")
+            continue
 
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), BarColumn(), console=console) as progress:
-        task = progress.add_task("Verarbeite...", total=len(files))
+        # Dateiname für das Ergebnis festlegen
+        new_xml_name = f"{file_path.stem}_RAW_FIXED.musicxml"
+        new_xml_path = output_folder / new_xml_name
+        
+        # Geheiltes XML speichern
+        with open(new_xml_path, "w", encoding="utf-8") as f:
+            f.write(cleaned_xml_content)
+        print(f"   [OK] Geheiltes XML gespeichert: {new_xml_name}")
 
-        for file in files:
-            progress.update(task, description=f"Analysiere {file.name}")
-            temp_xml_path = "temp_preprocessing.xml"
-            xml_data = ""
-            current_issues = []
+        # Heilungs-Protokoll (.log.txt) speichern
+        log_file_path = output_folder / f"{new_xml_name}.log.txt"
+        with open(log_file_path, "w", encoding="utf-8") as f:
+            f.write("=== SANITIZER HEALING LOG ===\n")
+            f.write(f"Ursprungsdatei: {file_path.name}\n")
+            f.write("-" * 40 + "\n")
+            if healing_log:
+                f.write(healing_log)
+            else:
+                f.write("Keine automatischen Korrekturen notwendig.")
+        print(f"   [OK] Heilungs-Log gespeichert: {log_file_path.name}")
+
+        # ---------------------------------------------------------
+        # SCHRITT 2: AUDITOR (Analyse des geheilten XMLs)
+        # ---------------------------------------------------------
+        print("-> Starte Auditor-Analyse (music21)...")
+        try:
+            # Wir laden das BEREITS GEHEILTE XML für den Audit
+            score = converter.parse(str(new_xml_path))
+            analyzer = VoiceAnalyzer()
             
-            try:
-                # Schritt 1: Rohes XML laden & Text-Fixes (Pre-Processor)
-                xml_data = load_robustly(file)
-                with open(temp_xml_path, "w", encoding="utf-8") as f:
-                    f.write(xml_data)
-                
-                # Schritt 2: Einlesen
-                score = converter.parse(temp_xml_path)
-                
-                # Schritt 3: ANALYSE (Jetzt sofort, damit wir die Daten haben!)
-                current_issues = analyzer.process_score(score, file.name)
-                
-                # Schritt 4: Vorsichtige Reparaturversuche
-                try:
-                    simple_safe_fix(score)
-                except:
-                    pass # Wenn der Fix scheitert, machen wir trotzdem weiter
-                
-                # Schritt 5: Speichern
-                has_critical = any(i['type'] == "OVERFULL_MEASURE" for i in current_issues)
-                target_dir = review_path if has_critical else output
-                target_file = target_dir / f"{file.stem}.musicxml"
-                
-                try:
-                    score.write('musicxml', fp=target_file)
-                    status = "NEEDS_REVIEW" if has_critical else "CLEANED"
-                except Exception as write_err:
-                    # FALLBACK: Wenn der Export scheitert, nutzen wir das RAW-XML
-                    status = "REVIEW_RAW_SAVE"
-                    target_file = review_path / f"{file.stem}_RAW_FIXED.musicxml"
-                    with open(target_file, "w", encoding="utf-8") as f:
-                        f.write(xml_data)
-                    console.print(f"[yellow]Warnung: Export-Fehler bei {file.name}. Raw-Fallback genutzt.[/yellow]")
-
-                # Audit-Log schreiben (mit den gefundenen Issues!)
-                audit.log(file.name, status, current_issues)
-                
-            except Exception as e:
-                # Komplett-Absturz beim Laden
-                console.print(f"[red]Fehler bei {file.name}: {e}[/red]")
-                audit.log(file.name, "ERROR", [{"type": "SYSTEM_ERROR", "measure": 0, "xml_id": "", "info": str(e)}])
+            # Analyse durchführen
+            issues = analyzer.process_score(score, new_xml_name)
+            print(f"   [OK] Auditor hat {len(issues)} verbleibende Probleme gefunden.")
             
-            finally:
-                if os.path.exists(temp_xml_path):
-                    os.remove(temp_xml_path)
-            
-            progress.advance(task)
+        except Exception as e:
+            print(f"   FEHLER im Auditor: {e}")
+            issues = []
 
-    audit.save_json(Path("audit_report.json"))
-    console.print("\n[bold green]Batch abgeschlossen.[/bold green]")
+        # ---------------------------------------------------------
+        # SCHRITT 3: REPORT SPEICHERN (.json)
+        # ---------------------------------------------------------
+        report_data = {
+            "file": new_xml_name,
+            "status": "REVIEW_REQUIRED",
+            "actions": issues 
+        }
+
+        report_path = output_folder / f"{new_xml_name}.json"
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report_data, f, indent=4)
+        print(f"   [OK] JSON-Report gespeichert: {report_path.name}")
+
+    print("\n--- Pipeline beendet. ---")
+    print("Du kannst jetzt die Web-UI aktualisieren.")
 
 if __name__ == "__main__":
-    app()
+    run_pipeline()
+    
