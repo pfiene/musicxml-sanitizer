@@ -1,33 +1,38 @@
 # MusicXML Sanitizer & Auditor
 
-Ein intelligentes Tool-Set zur automatischen Bereinigung, Analyse und Visualisierung von MusicXML-Dateien. Speziell optimiert für komplexe Klavierliteratur (z. B. Beethoven-Sonaten) und die Vorbereitung für digitale Archivierung oder Web-Rendering.
+Ein intelligentes Tool-Set zur automatischen Bereinigung, Analyse und Visualisierung von MusicXML-Dateien. Optimiert für komplexe Klavierliteratur und die Vorbereitung für digitale Archivierung.
+
+## Aktueller Meilenstein: Beethoven-Case (Op. 10 No. 1)
+- **Erfolgreiche Heilung:** Reduzierung der Audit-Issues von 40 auf 5 durch intelligente Vorverarbeitung.
+- **WASM-Stabilität:** Implementierung einer Strict-Ordering-Logik für XML-Tags zur Vermeidung von Speicherfehlern im Verovio-Frontend.
 
 ## Kern-Features
 
 ### 1. Intelligenter Sanitizer (Pre-Processor)
-- Voice Merging: Erkennt redundante Stimmen-Splits in Klaviersystemen und führt sie automatisch in Stimme 1 (rechts) bzw. Stimme 5 (links) zusammen.
-- Chord Fusion: Erkennt durch backup/forward getrennte Noten auf derselben Zählzeit und transformiert sie in echte MusicXML chord-Strukturen.
-- Redundancy Cleanup: Löscht automatisch Filler Rests (überlappende Pausen), die durch fehlerhafte Exporte oder OCR-Scans entstanden sind.
-- Automatic Healing Log: Erstellt ein detailliertes Protokoll (.log.txt) über jeden automatischen Eingriff (z. B. verschobene Stimmen, gelöschte Pausen).
+- In-Place Voice Merging: Schiebt fragmentarische Nebenstimmen in die Hauptstimme, sofern keine rhythmische Kollision vorliegt.
+- Grace-Note-Transformation: Erkennt übervolle Takte und wandelt dekorative Kleinst-Notenwerte (16th bis 256th) automatisch in mathematisch neutrale Grace-Notes um.
+- Redundancy Cleanup: Identifiziert und löscht Pausen, die exakt auf der Zeitposition einer Note liegen (Filler-Rest-Beseitigung).
+- Strict Tag Ordering: Sortiert Kind-Elemente innerhalb der Note-Tags nach MusicXML-Schema, um Rendering-Abstürze (Out of bounds) zu verhindern.
 
 ### 2. Rhythmus-Auditor (VoiceAnalyzer)
-- Mathematische Bilanz: Nutzt music21, um die rhythmische Füllung jedes Taktes gegen die Taktart zu prüfen.
-- Overfill Detection: Markiert Takte, die z. B. durch nicht-deklarierte Stichnoten (Grace Notes mit Duration) mathematisch zu lang sind.
-- Audit Report: Generiert eine präzise actions.json für jede Datei zur Darstellung in der Web-UI.
+- Nutzt music21 für eine tiefgehende mathematische Prüfung der Takt-Bilanz.
+- Erzeugt präzise JSON-Berichte für jede bearbeitete Datei.
 
 ### 3. Web-UI & Visualisierung
-- Verovio-WASM Integration: High-Performance Rendering direkt im Browser.
-- Präzise Navigation: Eigens entwickelte MEI-Analyse-Logik, die Taktnummern im internen Verovio-Modell lokalisiert. Garantiert korrekte Sprünge (z. B. Takt 512 auf Seite 18) auch bei Partituren mit 100+ Seiten.
-- Synchronisierte Sidebar: Klickbare Issue-Liste führt sofort zur markierten Stelle im Notenbild.
+- High-Performance Rendering via Verovio-WASM.
+- MEI-Analyse-Navigation: Extrahiert zur Laufzeit IDs aus dem internen MEI-Modell, um punktgenaue Sprünge zu Taktnummern in großen Partituren zu ermöglichen.
 
 ## Projektstruktur
 - cli.py: Haupt-Pipeline (Sanitize -> Audit -> Report)
-- core/pre_processor.py: Musikalische Heilungs-Logik & XML-Fixes
+- core/pre_processor.py: Musikalische Heilungs-Logik (In-Place Methode)
 - core/voice_analyzer.py: Rhythmus-Analyse via music21
 - api/server.py: FastAPI Backend (Port 8001)
 - static/index.html: Verovio Web-Frontend
-- input/: Quell-Dateien (.mxl, .musicxml) [Ignoriert in Git]
-- needs_review/: Output: Geheiltes XML, JSON-Report, Log-Protokoll [Ignoriert in Git]
+
+## Start
+1. Abhängigkeiten: fastapi, uvicorn, music21
+2. Pipeline: python cli.py (Verarbeitet input/ nach needs_review/)
+3. Web-UI: python api/server.py (Öffne http://127.0.0.1:8001)
 
 ## Installation & Start
 1. Abhängigkeiten installieren:

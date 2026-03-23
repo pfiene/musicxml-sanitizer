@@ -92,23 +92,29 @@
     }
 
     async function loadFile(folder, name) {
-        currentFile = name;
-        log(`Lade ${name}...`);
-        try {
-            const res = await fetch(`/file/${folder}/${name}`);
-            const xml = await res.json();
-            vrvToolkit.loadData(xml.content);
-            vrvToolkit.redoLayout();
-            totalPages = vrvToolkit.getPageCount();
-            currentPage = 1;
+    currentFile = name;
+    log(`Lade ${name}...`);
+    try {
+        const res = await fetch(`/file/${folder}/${name}`);
+        const xml = await res.json();
+        
+        // Verovio laden
+        vrvToolkit.loadData(xml.content);
+        vrvToolkit.redoLayout();
+        totalPages = vrvToolkit.getPageCount();
+        currentPage = 1;
+        render();
+        log(`Datei geladen. ${totalPages} Seiten.`);
 
-            const reportRes = await fetch(`/report/${name}`);
-            const reportData = await reportRes.json();
-            displayIssues(reportData);
-            render();
-            log(`Datei geladen. ${totalPages} Seiten.`);
-        } catch (err) { log("Ladefehler!"); }
+        // Report laden
+        const reportRes = await fetch(`/report/${name}`);
+        const reportData = await reportRes.json();
+        displayIssues(reportData);
+
+    } catch (err) { 
+        log("Ladefehler: " + err.message); 
     }
+}
 
     function displayIssues(data) {
         const container = document.getElementById("issue-list");
@@ -133,40 +139,51 @@
     }
 
     function jumpTo(measureNum) {
-        log(`Suche Takt ${measureNum} via MEI...`);
-        try {
-            const mei = vrvToolkit.getMEI({scoreBased: true});
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(mei, "text/xml");
-            const measures = xmlDoc.getElementsByTagName("measure");
-            
-            let realId = null;
-            for (let m of measures) {
-                if (m.getAttribute("n") === String(measureNum)) {
-                    realId = m.getAttribute("xml:id");
-                    break;
-                }
+    log(`Suche Takt ${measureNum} via MEI-Analyse...`);
+    try {
+        // Wir holen das MEI
+        const mei = vrvToolkit.getMEI({scoreBased: true});
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(mei, "text/xml");
+        
+        // WICHTIG: Suche nach 'measure' Tags, egal in welchem Namespace
+        const measures = xmlDoc.querySelectorAll("measure");
+        let realId = null;
+        
+        for (let m of measures) {
+            if (m.getAttribute("n") === String(measureNum)) {
+                realId = m.getAttribute("xml:id") || m.getAttribute("id");
+                if (realId) break;
             }
+        }
 
-            if (realId) {
-                const page = vrvToolkit.getPageWithElement(realId);
-                if (page > 0) {
-                    currentPage = page;
-                    render();
-                    setTimeout(() => {
-                        const el = document.getElementById(realId);
-                        if (el) {
-                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            el.style.outline = "10px solid red";
-                            el.style.fill = "red";
-                        }
-                    }, 150);
-                }
+        if (realId) {
+            log(`ID im MEI gefunden: ${realId}`);
+            const page = vrvToolkit.getPageWithElement(realId);
+            
+            if (page > 0) {
+                currentPage = page;
+                render();
+                
+                setTimeout(() => {
+                    // Suche im SVG (Verovio nutzt oft Präfixe für IDs im SVG)
+                    const el = document.getElementById(realId) || document.querySelector(`[id$="${realId}"]`);
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        el.style.outline = "10px solid red";
+                        el.style.fill = "red";
+                    }
+                }, 200);
             } else {
-                log(`Takt ${measureNum} nicht im MEI gefunden.`);
+                log(`FEHLER: ID ${realId} keiner Seite zugeordnet.`);
             }
-        } catch (err) { log("Nav-Fehler: " + err.message); }
+        } else {
+            log(`FEHLER: Takt ${measureNum} nicht im MEI vorhanden.`);
+        }
+    } catch (err) {
+        log("Nav-Fehler: " + err.message);
     }
+}
 
     function render() {
         document.getElementById("notation").innerHTML = vrvToolkit.renderToSVG(currentPage);
