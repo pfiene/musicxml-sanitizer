@@ -1,50 +1,31 @@
-# MusicXML Sanitizer & Auditor
+# MusicXML Sanitizer & Auditor: Meilenstein erreicht
 
-Ein intelligentes Tool-Set zur automatischen Bereinigung, Analyse und Visualisierung von MusicXML-Dateien. Optimiert für komplexe Klavierliteratur und die Vorbereitung für digitale Archivierung.
+Dieses Projekt hat die kritische Phase der technischen Stabilisierung abgeschlossen. Wir haben das System erfolgreich an Beethovens Klaviersonate Op. 10 Nr. 1 (Prestissimo) getestet und optimiert.
 
-## Aktueller Meilenstein: Beethoven-Case (Op. 10 No. 1)
-- **Erfolgreiche Heilung:** Reduzierung der Audit-Issues von 40 auf 5 durch intelligente Vorverarbeitung.
-- **WASM-Stabilität:** Implementierung einer Strict-Ordering-Logik für XML-Tags zur Vermeidung von Speicherfehlern im Verovio-Frontend.
+## Aktueller Stand (Ende Session 1)
 
-## Kern-Features
+### 1. Technische Durchbrüche
+- **MEI-basierte Navigation:** Wir navigieren in großen Partituen (19+ Seiten) nicht mehr über geschätzte Offsets, sondern über eine Echtzeit-Analyse des internen Verovio-MEI-Modells. Dies garantiert punktgenaue Sprünge zu Taktnummern.
+- **WASM-Stabilitäts-Fix:** Implementierung einer `Strict Tag Ordering` Logik. MusicXML-Elemente wie `<grace/>` und `<chord/>` werden nun im XML-Baum an die korrekte Position sortiert, was Speicherfehler ("Memory access out of bounds") im Verovio-Renderer eliminiert.
+- **Namespace-Handling:** Die Brücke zwischen dem Auditor (`music21`), der ein "nacktes" XML benötigt, und dem Renderer (`Verovio`), der den MusicXML-Namespace verlangt, wurde über eine intelligente Arbeitsspeicher-Reinigung in der `cli.py` geschlagen.
 
-### 1. Intelligenter Sanitizer (Pre-Processor)
-- In-Place Voice Merging: Schiebt fragmentarische Nebenstimmen in die Hauptstimme, sofern keine rhythmische Kollision vorliegt.
-- Grace-Note-Transformation: Erkennt übervolle Takte und wandelt dekorative Kleinst-Notenwerte (16th bis 256th) automatisch in mathematisch neutrale Grace-Notes um.
-- Redundancy Cleanup: Identifiziert und löscht Pausen, die exakt auf der Zeitposition einer Note liegen (Filler-Rest-Beseitigung).
-- Strict Tag Ordering: Sortiert Kind-Elemente innerhalb der Note-Tags nach MusicXML-Schema, um Rendering-Abstürze (Out of bounds) zu verhindern.
+### 2. Vom "Dampfhammer" zum "Skalpell" (Architektur-Wechsel)
+Wir haben gelernt, dass eine vollautomatische Heilung bei komplexer Polyphonie (Beethoven) riskant ist. Deshalb wurde die Architektur wie folgt umgestellt:
+- **Scan-and-Suggest:** Der Pre-Processor heilt technisch (IDs, Sortierung), aber schlägt musikalische Heilungen (wie Grace-Note-Konvertierung) nur noch vor.
+- **Einheitlicher Audit-Report:** Alle Fehler (Auditor) und Heilungs-Vorschläge (Pre-Processor) fließen in ein gemeinsames JSON-Dokument.
 
-### 2. Rhythmus-Auditor (VoiceAnalyzer)
-- Nutzt music21 für eine tiefgehende mathematische Prüfung der Takt-Bilanz.
-- Erzeugt präzise JSON-Berichte für jede bearbeitete Datei.
+## Nächste Schritte (Vorbereitung Session 2)
 
-### 3. Web-UI & Visualisierung
-- High-Performance Rendering via Verovio-WASM.
-- MEI-Analyse-Navigation: Extrahiert zur Laufzeit IDs aus dem internen MEI-Modell, um punktgenaue Sprünge zu Taktnummern in großen Partituren zu ermöglichen.
+### Ziel: Das interaktive Healing-System
+In der nächsten Session bauen wir die Web-UI zu einem echten Editor aus:
+1. **Heilungs-Buttons:** In der Sidebar erscheint bei Takten wie 512 ein Button "Grace-Notes heilen".
+2. **API-Edit-Endpunkt:** Ein neuer FastAPI-Endpunkt nimmt die Korrekturanfrage entgegen, führt die Änderung im XML-Baum durch und speichert die Datei neu ab.
+3. **Live-Reload:** Nach der Heilung aktualisiert sich das Notenbild sofort, und das Issue verschwindet aus der Liste.
 
-## Projektstruktur
-- cli.py: Haupt-Pipeline (Sanitize -> Audit -> Report)
-- core/pre_processor.py: Musikalische Heilungs-Logik (In-Place Methode)
-- core/voice_analyzer.py: Rhythmus-Analyse via music21
-- api/server.py: FastAPI Backend (Port 8001)
-- static/index.html: Verovio Web-Frontend
+## Projektstruktur für Neustart
+- `core/pre_processor.py`: Scannt Musik, fixiert Tags/IDs und generiert Korrekturvorschläge.
+- `core/voice_analyzer.py`: Mathematische Rhythmus-Validierung via music21.
+- `cli.py`: Die Pipeline, die beide Module vereint.
+- `api/server.py`: Das Backend für die Web-UI.
+- `static/index.html`: Das Frontend mit MEI-Sprung-Logik.
 
-## Start
-1. Abhängigkeiten: fastapi, uvicorn, music21
-2. Pipeline: python cli.py (Verarbeitet input/ nach needs_review/)
-3. Web-UI: python api/server.py (Öffne http://127.0.0.1:8001)
-
-## Installation & Start
-1. Abhängigkeiten installieren:
-   pip install fastapi uvicorn music21
-
-2. Pipeline ausführen (Legt eine Datei in input/ ab):
-   python cli.py
-
-3. Web-UI starten:
-   python api/server.py
-
-Öffne danach http://127.0.0.1:8001 im Browser.
-
-## Technischer Hintergrund: Der Sprung-Fix
-Um große Partituren stabil zu navigieren, nutzt das Tool das getMEI()-Modul des Verovio-Toolkits. Da MusicXML-IDs beim Import oft transformiert werden, extrahiert die UI zur Laufzeit die internen xml:ids basierend auf der musikalischen Taktnummer (n) aus dem MEI-DOM. Dies löst das Problem von verschobenen Seitenindizes in großen Dateien.

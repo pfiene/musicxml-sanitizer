@@ -4,17 +4,17 @@ class VoiceAnalyzer:
     def __init__(self):
         self.audit_trail = []
 
+    # In core/voice_analyzer.py
+
     def analyze_measure(self, m, part_name, file_name):
-        """Analysiert einen einzelnen Takt."""
-        expected = m.barDuration.quarterLength
-        actual = m.duration.quarterLength
+        expected = float(m.barDuration.quarterLength)
+        actual = float(m.duration.quarterLength)
         issues = []
         
-        # 1. Suche nach überlappenden Pausen (Filler Rests)
+        # 1. Filler Rests
         offsets = {}
         for el in m.flatten().notesAndRests:
-            if el.offset not in offsets:
-                offsets[el.offset] = []
+            if el.offset not in offsets: offsets[el.offset] = []
             offsets[el.offset].append(el)
 
         for offset, elements in offsets.items():
@@ -26,22 +26,33 @@ class VoiceAnalyzer:
                         "type": "FILLER_REST",
                         "measure": m.measureNumber,
                         "part": part_name,
-                        "offset": float(offset)
+                        "offset": float(offset),
+                        "message": f"Pause kollidiert mit Note bei Schlag {offset + 1}"
                     })
 
-        # 2. Takt-Bilanz prüfen (mit Toleranz)
+        # 2. Takt-Bilanz mit Begründung
         tolerance = 0.02
         if actual > (expected + tolerance):
             issues.append({
                 "type": "OVERFULL_MEASURE",
                 "measure": m.measureNumber,
                 "part": part_name,
-                "actual": round(float(actual), 3),
-                "expected": float(expected)
+                "actual": round(actual, 3),
+                "expected": expected,
+                "message": f"Takt zu lang: {round(actual, 2)} / {expected} Viertel"
+            })
+        elif actual < (expected - tolerance):
+            issues.append({
+                "type": "INCOMPLETE_MEASURE",
+                "measure": m.measureNumber,
+                "part": part_name,
+                "actual": round(actual, 3),
+                "expected": expected,
+                "message": f"Takt zu kurz: {round(actual, 2)} / {expected} Viertel"
             })
             
         return issues
-
+    
     def process_score(self, score, file_name):
         all_issues = []
         # Wir zählen ALLE Takte in der gesamten Datei global durch
