@@ -1,34 +1,44 @@
-from music21 import duration
+from music21 import note
 
 class Reconstructor:
     @staticmethod
     def fix_overfull_measure(measure):
-        """
-        Versucht einen Takt zu retten, indem 'Füll-Pausen' (die unter Noten liegen)
-        entfernt werden und der Rest nach links rückt.
-        """
-        # 1. Finde alle Pausen, die exakt gleichzeitig mit einer Note starten
         to_remove = []
-        for r in measure.getElementsByClass('Rest'):
-            # Prüfe, ob am selben Offset eine Note existiert
-            overlapping_notes = [n for n in measure.getElementsByOffset(r.offset).notes if n.isNote]
-            if overlapping_notes:
-                to_remove.append(r)
+        for r in measure.flatten().getElementsByClass('Rest'):
+            overlapping = [n for n in measure.flatten().getElementsByOffset(r.offset).notes if n.isNote]
+            if overlapping: to_remove.append(r)
+        for r in to_remove: measure.remove(r)
+        return len(to_remove) > 0
 
-        if not to_remove:
-            return False # Nichts zum Reparieren gefunden
+    @staticmethod
+    def fill_with_rests(measure):
+        expected = float(measure.barDuration.quarterLength)
+        actual = float(measure.duration.quarterLength)
+        needed = expected - actual
+        if needed > 0.01:
+            r = note.Rest()
+            r.duration.quarterLength = needed
+            measure.append(r)
+            return True
+        return False
 
-        # 2. Entferne die Pausen
-        for r in to_remove:
-            measure.remove(r)
-            
-        # 3. 'Shift-Left': In music21 korrigiert .flat die Offsets oft automatisch,
-        # aber wir markieren den Takt als 'bearbeitet'.
-        measure.editorial.comments.append("Shift-Left: Filler rests removed.")
+    @staticmethod
+    def convert_to_grace(measure):
+        """Wandelt alle Noten im Takt in Grace-Notes um."""
+        notes = list(measure.flatten().notes)
+        if not notes: return False
+        
+        for n in notes:
+            if not n.duration.isGrace:
+                # Typ sichern (Wichtig für MusicXML!)
+                t = n.duration.type
+                if not t or t == 'zero': t = '16th'
+                # In Grace Note umwandeln
+                n.duration.makeGrace()
+                n.duration.type = t
         return True
 
     @staticmethod
-    def mark_for_review(measure, message):
-        """Markiert den Takt für die Web-UI rot."""
-        for n in measure.flat.notes:
-            n.style.color = '#FF0000' # Rot für Verovio
+    def mark_for_review(measure, message="Review"):
+        for n in measure.flatten().notes: n.style.color = '#FF0000'
+        return True

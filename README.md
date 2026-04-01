@@ -1,31 +1,32 @@
-# MusicXML Sanitizer & Auditor: Meilenstein erreicht
+# MusicXML Sanitizer & Auditor: Meilenstein Interaktives Healing erreicht
 
-Dieses Projekt hat die kritische Phase der technischen Stabilisierung abgeschlossen. Wir haben das System erfolgreich an Beethovens Klaviersonate Op. 10 Nr. 1 (Prestissimo) getestet und optimiert.
+Dieses Projekt hat die kritische Phase der interaktiven Benutzerführung und der API-gestützten Korrektur erfolgreich abgeschlossen. Wir haben das System an Beethovens Klaviersonate Op. 10 Nr. 1 weiter geschärft.
 
-## Aktueller Stand (Ende Session 1)
+## Aktueller Stand (Ende Session 2)
 
-### 1. Technische Durchbrüche
-- **MEI-basierte Navigation:** Wir navigieren in großen Partituen (19+ Seiten) nicht mehr über geschätzte Offsets, sondern über eine Echtzeit-Analyse des internen Verovio-MEI-Modells. Dies garantiert punktgenaue Sprünge zu Taktnummern.
-- **WASM-Stabilitäts-Fix:** Implementierung einer `Strict Tag Ordering` Logik. MusicXML-Elemente wie `<grace/>` und `<chord/>` werden nun im XML-Baum an die korrekte Position sortiert, was Speicherfehler ("Memory access out of bounds") im Verovio-Renderer eliminiert.
-- **Namespace-Handling:** Die Brücke zwischen dem Auditor (`music21`), der ein "nacktes" XML benötigt, und dem Renderer (`Verovio`), der den MusicXML-Namespace verlangt, wurde über eine intelligente Arbeitsspeicher-Reinigung in der `cli.py` geschlagen.
+### 1. Technische Durchbrüche & UI
+- **Interaktives Healing im Frontend:** Die Web-UI wurde zu einem echten interaktiven Dashboard ausgebaut. In der Sidebar erscheinen nun dynamisch benannte Buttons wie "Pause entfernen", "Mit Pausen auffüllen" oder "Stichnoten zu Verzierungen umwandeln" [1].
+- **Robuste MEI-Navigation:** Die Navigation über das interne Verovio-Modell wurde Namespace-unabhängig umgeschrieben. Die Ziel-Takte werden nun auf allen 19 Seiten punktgenau angesprungen und für den Nutzer dick rot pulsierend markiert [1].
+- **MXL-Parsing (ZIP-Hürde genommen):** Der `RobustParser` wurde erfolgreich integriert. Dateien im `.mxl`-Format werden nun auf Byte-Ebene entpackt, ohne dass der music21-Converter sie fälschlicherweise als ABC-Dateien interpretiert.
+- **Auftakt-Intelligenz:** Der `VoiceAnalyzer` ignoriert nun unvollständige Takte an den Rändern von Wiederholungsklammern (Anacrusis), wodurch die Zahl der "False Positives" von 48 auf 7 echte Issues geschrumpft ist [1].
 
-### 2. Vom "Dampfhammer" zum "Skalpell" (Architektur-Wechsel)
-Wir haben gelernt, dass eine vollautomatische Heilung bei komplexer Polyphonie (Beethoven) riskant ist. Deshalb wurde die Architektur wie folgt umgestellt:
-- **Scan-and-Suggest:** Der Pre-Processor heilt technisch (IDs, Sortierung), aber schlägt musikalische Heilungen (wie Grace-Note-Konvertierung) nur noch vor.
-- **Einheitlicher Audit-Report:** Alle Fehler (Auditor) und Heilungs-Vorschläge (Pre-Processor) fließen in ein gemeinsames JSON-Dokument.
+### 2. Der "Heal"-Workflow (Backend)
+- Der Server besitzt nun den Endpunkt `POST /apply-fix`. 
+- Wenn der User in der UI auf "Heilen" klickt, sucht das Backend den Takt via music21 und wendet Funktionen der neuen `reconstructor.py` an (z. B. das Auffüllen mit Pausen oder das Entfernen von OMR-Füllpausen).
 
-## Nächste Schritte (Vorbereitung Session 2)
+## Bekannte Probleme & To-Dos für Session 3
 
-### Ziel: Das interaktive Healing-System
-In der nächsten Session bauen wir die Web-UI zu einem echten Editor aus:
-1. **Heilungs-Buttons:** In der Sidebar erscheint bei Takten wie 512 ein Button "Grace-Notes heilen".
-2. **API-Edit-Endpunkt:** Ein neuer FastAPI-Endpunkt nimmt die Korrekturanfrage entgegen, führt die Änderung im XML-Baum durch und speichert die Datei neu ab.
-3. **Live-Reload:** Nach der Heilung aktualisiert sich das Notenbild sofort, und das Issue verschwindet aus der Liste.
+### Der "2048th Duration" Blocker
+Beim Speichern des Dokuments bricht music21 in Takt 512 ab: *Cannot convert "2048th" duration to MusicXML (too short)*. 
+- **Ursache:** Extreme OMR-Artefakte im XML-Dokument. Music21 berechnet diese beim Laden aus den Time-Divisions neu, weshalb einfaches Suchen-und-Ersetzen im Text nicht ausreicht [1].
+- **Ziel für Session 3:** Entweder die Quell-XML vor dem Einlesen auf Element-Tree-Ebene radikal von Mikro-Notenwerten befreien oder music21 beim Export zwingen, ungültige Werte auf 256th aufzurunden.
+
+---
 
 ## Projektstruktur für Neustart
-- `core/pre_processor.py`: Scannt Musik, fixiert Tags/IDs und generiert Korrekturvorschläge.
-- `core/voice_analyzer.py`: Mathematische Rhythmus-Validierung via music21.
-- `cli.py`: Die Pipeline, die beide Module vereint.
-- `api/server.py`: Das Backend für die Web-UI.
-- `static/index.html`: Das Frontend mit MEI-Sprung-Logik.
-
+- `cli.py`: Die Pipeline zum Generieren des JSON-Audits.
+- `api/server.py`: Das FastAPI-Backend mit den dynamischen Heil-Endpunkten [1].
+- `core/pre_processor.py`: Technische XML-Säuberung.
+- `core/voice_analyzer.py`: Rhythmus-Validierung und Fehlersuche [1].
+- `core/reconstructor.py`: Die Algorithmen zur musikalischen Heilung [1].
+- `static/index.html`: Das interaktive Frontend mit Verovio-WASM [1].

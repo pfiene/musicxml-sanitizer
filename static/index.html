@@ -2,52 +2,78 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>MusicXML Sanitizer Preview</title>
+    <title>MusicXML Sanitizer - Interactive Healing</title>
     <script src="https://www.verovio.org/javascript/latest/verovio-toolkit-wasm.js" defer></script>
     <style>
-        :root { --dark: #2c3e50; --accent: #e74c3c; --sidebar: #ffffff; --viewer: #cbd3da; }
-        body { font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; background: #f4f4f4; overflow: hidden; }
+        :root { --dark: #2c3e50; --accent: #27ae60; --sidebar: #ffffff; --viewer: #cbd3da; --warning: #f39c12; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; margin: 0; background: #f4f4f4; overflow: hidden; }
+        
         header { background: var(--dark); color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 8px rgba(0,0,0,0.3); z-index: 100; }
         .nav-controls { display: flex; align-items: center; gap: 15px; }
         .btn-nav { background: #34495e; color: white; border: 1px solid #555; padding: 5px 15px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+        
         #main { display: flex; flex: 1; overflow: hidden; }
-        #sidebar { width: 400px; display: flex; flex-direction: column; border-right: 2px solid #ccc; background: var(--sidebar); }
-        .sidebar-header { background: #eee; padding: 8px 15px; font-weight: bold; font-size: 0.85em; border-bottom: 1px solid #ddd; text-transform: uppercase; color: #666; }
+        
+        #sidebar { width: 380px; display: flex; flex-direction: column; border-right: 2px solid #ccc; background: var(--sidebar); z-index: 10; }
+        .sidebar-header { background: #eee; padding: 10px 15px; font-weight: bold; font-size: 0.85em; border-bottom: 1px solid #ddd; text-transform: uppercase; color: #666; }
+        
         .scroll-area { flex: 1; overflow-y: auto; padding: 10px; }
-        #file-list { height: 30%; border-bottom: 2px solid #ddd; }
-        #issue-list { height: 55%; background: #fffdfa; }
-        .file-item { padding: 8px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.85em; }
-        .file-item:hover { background: #eef7ff; }
-        .issue-card { background: white; border: 1px solid #f39c12; padding: 12px; margin-bottom: 10px; border-radius: 5px; cursor: pointer; border-left: 5px solid #f39c12; transition: 0.2s; }
-        .issue-card:hover { background: #fff9e6; transform: translateX(5px); }
-        .issue-card strong { color: #d35400; display: block; margin-bottom: 3px; }
-        #viewer-container { flex: 1; overflow: auto; padding: 30px; background: var(--viewer); display: flex; justify-content: center; }
-        #notation { background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.2); padding: 40px; min-width: 800px; }
-        #debug-console { height: 120px; background: #222; color: #00ff00; font-family: monospace; font-size: 11px; padding: 10px; overflow-y: auto; border-top: 2px solid #000; }
+        #file-list { height: 25%; border-bottom: 2px solid #ddd; }
+        #issue-list { height: 75%; background: #fffdfa; }
+        
+        .file-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.9em; }
+        .file-item:hover { background: #eef7ff; color: #3498db; }
+        
+        .issue-card { background: white; border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; border-radius: 6px; border-left: 5px solid var(--warning); cursor: pointer; }
+        .issue-card:hover { background: #fdf9f0; }
+        .issue-card strong { color: #d35400; display: block; font-size: 0.9em; }
+        
+        .btn-fix { margin-top: 10px; background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
+        .btn-fix:hover { background: #219150; }
+
+        #viewer-container { flex: 1; overflow: auto; padding: 40px; background: var(--viewer); display: flex; flex-direction: column; align-items: center; }
+        #notation { background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.3); padding: 20px; display: inline-block; min-width: 800px; }
+        
+        /* Highlight für den aktiven Takt */
+        .highlight-measure {
+    outline: 12px solid rgba(255, 0, 0, 0.9) !important;
+    outline-offset: 10px;
+    background: rgba(255, 0, 0, 0.15);
+    box-shadow: 0 0 50px rgba(255, 0, 0, 0.5);
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+    0% { outline-color: rgba(255, 0, 0, 0.9); }
+    50% { outline-color: rgba(255, 0, 0, 0.3); }
+    100% { outline-color: rgba(255, 0, 0, 0.9); }
+}
+        #debug-console { height: 80px; background: #222; color: #00ff00; font-family: monospace; font-size: 10px; padding: 8px; overflow-y: auto; }
     </style>
 </head>
 <body>
 
 <header>
-    <div><strong>dzb lesen</strong> | MusicXML Auditor</div>
+    <div><strong>dzb lesen</strong> | MusicXML Sanitizer</div>
     <div class="nav-controls">
         <button class="btn-nav" onclick="changePage(-1)">◀</button>
-        <span id="page-info" style="min-width: 100px; text-align: center;">Initialisiere...</span>
+        <span id="page-info">Seite - / -</span>
         <button class="btn-nav" onclick="changePage(1)">▶</button>
     </div>
-    <div id="status" style="font-size: 0.8em; opacity: 0.7;">Warte auf WASM...</div>
+    <div id="status" style="font-size: 0.8em; opacity: 0.8;">Lade...</div>
 </header>
 
 <div id="main">
     <div id="sidebar">
-        <div class="sidebar-header">Dateien in Needs Review</div>
+        <div class="sidebar-header">Dateien</div>
         <div id="file-list" class="scroll-area">Lade...</div>
-        <div class="sidebar-header" style="color: #d35400;">Korrekturbedarf (Actions)</div>
+        <div class="sidebar-header" style="color: #d35400;">Korrekturbedarf</div>
         <div id="issue-list" class="scroll-area">Wähle eine Datei.</div>
         <div id="debug-console">System-Log bereit...</div>
     </div>
+    
     <div id="viewer-container">
-        <div id="viewer"><div id="notation"></div></div>
+        <div id="notation"></div>
     </div>
 </div>
 
@@ -64,14 +90,20 @@
     }
 
     document.addEventListener("DOMContentLoaded", () => {
+        loadFileList(); 
+
         verovio.module.onRuntimeInitialized = () => {
             vrvToolkit = new verovio.toolkit();
             vrvToolkit.setOptions({
-                pageWidth: 2100, scale: 45, header: 'none', footer: 'none',
-                adjustPageHeight: true, xmlId: true
+                pageWidth: 2100, 
+                scale: 45, 
+                header: 'none', 
+                footer: 'none',
+                adjustPageHeight: true, 
+                xmlId: true // Wichtig für IDs im SVG
             });
             log("Verovio initialisiert.");
-            loadFileList();
+            document.getElementById("status").innerText = "Bereit.";
         };
     });
 
@@ -84,111 +116,141 @@
             files.forEach(f => {
                 const div = document.createElement("div");
                 div.className = "file-item";
-                div.innerHTML = "🔴 " + f.name;
+                div.innerHTML = "🎼 " + f.name;
                 div.onclick = () => loadFile(f.folder, f.name);
                 container.appendChild(div);
             });
-        } catch (e) { log("Fehler Dateiliste."); }
+        } catch (e) { log("Fehler beim Laden der Dateiliste."); }
     }
 
     async function loadFile(folder, name) {
-    currentFile = name;
-    log(`Lade ${name}...`);
-    try {
-        const res = await fetch(`/file/${folder}/${name}`);
-        const xml = await res.json();
-        
-        // Verovio laden
-        vrvToolkit.loadData(xml.content);
-        vrvToolkit.redoLayout();
-        totalPages = vrvToolkit.getPageCount();
-        currentPage = 1;
-        render();
-        log(`Datei geladen. ${totalPages} Seiten.`);
+        currentFile = name;
+        log(`Lade ${name}...`);
+        try {
+            const res = await fetch(`/file/${folder}/${name}`);
+            const data = await res.json();
+            
+            if (vrvToolkit) {
+                vrvToolkit.loadData(data.content);
+                vrvToolkit.redoLayout();
+                totalPages = vrvToolkit.getPageCount();
+                currentPage = 1;
+                render();
+                log(`Datei geladen. ${totalPages} Seiten.`);
+            }
 
-        // Report laden
-        const reportRes = await fetch(`/report/${name}`);
-        const reportData = await reportRes.json();
-        displayIssues(reportData);
-
-    } catch (err) { 
-        log("Ladefehler: " + err.message); 
+            const reportRes = await fetch(`/report/${name}`);
+            const reportData = await reportRes.json();
+            displayIssues(reportData);
+        } catch (err) { log("Ladefehler: " + err.message); }
     }
-}
 
-    function displayIssues(data) {
-        const container = document.getElementById("issue-list");
-        container.innerHTML = "";
-        
-        // Wir erwarten das Array unter 'actions' (wie im JSON-Beispiel)
-        const actions = data.actions || [];
-        
-        if (actions.length === 0) {
-            container.innerHTML = "<p style='padding:10px;'>Keine 'actions' im Report gefunden.</p>";
-            return;
+function displayIssues(data) {
+    const container = document.getElementById("issue-list");
+    container.innerHTML = "";
+    const actions = data.actions || [];
+    
+    actions.forEach(action => {
+        let primaryAction = { label: "Heilen ✨", type: action.type };
+        let showIgnore = false;
+
+        if (action.type === "FILLER_REST") {
+            primaryAction.label = "Überflüssige Pause entfernen";
+        } else if (action.type === "INCOMPLETE_MEASURE") {
+            primaryAction.label = "Mit Pausen auffüllen";
+            showIgnore = true; // Bei Auftakten wollen wir "Ignorieren"
+        } else if (action.type === "OVERFULL_MEASURE") {
+            primaryAction.label = "Stichnoten zu Verzierungen umwandeln";
+            primaryAction.type = "CONVERT_GRACE";
         }
 
-        actions.forEach(action => {
-            const card = document.createElement("div");
-            card.className = "issue-card";
-            card.innerHTML = `<strong>Takt ${action.measure}: ${action.type}</strong><small>Part: ${action.part || 'N/A'}</small>`;
-            card.onclick = () => jumpTo(action.measure);
-            container.appendChild(card);
-        });
-        log(`${actions.length} Korrekturvorschläge geladen.`);
-    }
+        const card = document.createElement("div");
+        card.className = "issue-card";
+        card.innerHTML = `
+            <div onclick="jumpTo('${action.measure}')">
+                <strong>Takt ${action.measure}: ${action.type}</strong>
+                <p style="font-size:0.8em; margin:5px 0;">${action.message}</p>
+            </div>
+            <div style="display:flex; gap:5px;">
+                <button class="btn-fix" onclick="applyFix('${currentFile}', ${action.measure}, '${primaryAction.type}')">
+                    ${primaryAction.label}
+                </button>
+                ${showIgnore ? `
+                    <button class="btn-fix" style="background:#7f8c8d; width:auto;" onclick="applyFix('${currentFile}', ${action.measure}, 'IGNORE')">
+                        Als Auftakt ignorieren ✅
+                    </button>
+                ` : ''}
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
 
-    function jumpTo(measureNum) {
-    log(`Suche Takt ${measureNum} via MEI-Analyse...`);
+    // DIE MEI-BASIERTE NAVIGATION
+function jumpTo(measureNum) {
+    log(`Suche Takt ${measureNum}...`);
     try {
-        // Wir holen das MEI
         const mei = vrvToolkit.getMEI({scoreBased: true});
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(mei, "text/xml");
         
-        // WICHTIG: Suche nach 'measure' Tags, egal in welchem Namespace
-        const measures = xmlDoc.querySelectorAll("measure");
-        let realId = null;
-        
-        for (let m of measures) {
-            if (m.getAttribute("n") === String(measureNum)) {
-                realId = m.getAttribute("xml:id") || m.getAttribute("id");
-                if (realId) break;
+        // Robuste Suche: Wir gehen alle Elemente durch und prüfen den lokalen Namen
+        let targetId = null;
+        const allElements = xmlDoc.querySelectorAll('*');
+        for (let el of allElements) {
+            if (el.localName === 'measure' && el.getAttribute('n') === String(measureNum)) {
+                targetId = el.getAttribute('xml:id');
+                break; // Ersten Treffer nehmen
             }
         }
 
-        if (realId) {
-            log(`ID im MEI gefunden: ${realId}`);
-            const page = vrvToolkit.getPageWithElement(realId);
-            
+        if (targetId) {
+            log(`Takt gefunden! ID: ${targetId}`);
+            const page = vrvToolkit.getPageWithElement(targetId);
             if (page > 0) {
                 currentPage = page;
                 render();
                 
                 setTimeout(() => {
-                    // Suche im SVG (Verovio nutzt oft Präfixe für IDs im SVG)
-                    const el = document.getElementById(realId) || document.querySelector(`[id$="${realId}"]`);
-                    if (el) {
-                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        el.style.outline = "10px solid red";
-                        el.style.fill = "red";
+                    // Suche im echten DOM (SVG)
+                    const svgEl = document.getElementById(targetId);
+                    if (svgEl) {
+                        svgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        document.querySelectorAll('.highlight-measure').forEach(e => e.classList.remove('highlight-measure'));
+                        svgEl.classList.add('highlight-measure');
+                    } else {
+                        log("Fehler: Takt-ID im SVG nicht gefunden.");
                     }
-                }, 200);
-            } else {
-                log(`FEHLER: ID ${realId} keiner Seite zugeordnet.`);
+                }, 150);
             }
         } else {
-            log(`FEHLER: Takt ${measureNum} nicht im MEI vorhanden.`);
+            log(`Takt ${measureNum} im MEI-Modell unauffindbar.`);
         }
     } catch (err) {
         log("Nav-Fehler: " + err.message);
     }
 }
 
+    async function applyFix(filename, measure, type) {
+        log(`Heile Takt ${measure}...`);
+        try {
+            const response = await fetch('/apply-fix', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename, measure, type })
+            });
+            const result = await response.json();
+            if (result.status === "success") {
+                log("✅ Erfolg!");
+                loadFile("needs_review", filename); 
+            } else { alert("Fehler: " + result.message); }
+        } catch (err) { log("Netzwerkfehler."); }
+    }
+
     function render() {
+        if (!vrvToolkit) return;
         document.getElementById("notation").innerHTML = vrvToolkit.renderToSVG(currentPage);
         document.getElementById("page-info").innerText = `Seite ${currentPage} / ${totalPages}`;
-        document.getElementById("status").innerText = "Bereit.";
     }
 
     function changePage(delta) {
