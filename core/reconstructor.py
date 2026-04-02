@@ -24,18 +24,14 @@ class Reconstructor:
 
     @staticmethod
     def convert_to_grace(measure):
-        """Wandelt alle Noten im Takt in Grace-Notes um."""
+        """Wandelt Noten in Grace-Notes um, indem die Dauer auf 0 gesetzt wird."""
         notes = list(measure.flatten().notes)
         if not notes: return False
-        
         for n in notes:
-            if not n.duration.isGrace:
-                # Typ sichern (Wichtig für MusicXML!)
-                t = n.duration.type
-                if not t or t == 'zero': t = '16th'
-                # In Grace Note umwandeln
-                n.duration.makeGrace()
-                n.duration.type = t
+            # Der sicherste Weg in music21: Dauer auf 0 und Typ festlegen
+            n.duration.quarterLength = 0.0
+            if not n.duration.type or n.duration.type == 'zero':
+                n.duration.type = '16th' 
         return True
 
     @staticmethod

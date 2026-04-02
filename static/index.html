@@ -152,38 +152,132 @@ function displayIssues(data) {
     
     actions.forEach(action => {
         let primaryAction = { label: "Heilen ✨", type: action.type };
-        let showIgnore = false;
-
-        if (action.type === "FILLER_REST") {
-            primaryAction.label = "Überflüssige Pause entfernen";
-        } else if (action.type === "INCOMPLETE_MEASURE") {
-            primaryAction.label = "Mit Pausen auffüllen";
-            showIgnore = true; // Bei Auftakten wollen wir "Ignorieren"
-        } else if (action.type === "OVERFULL_MEASURE") {
-            primaryAction.label = "Stichnoten zu Verzierungen umwandeln";
+        if (action.type === "FILLER_REST") primaryAction.label = "Pause entfernen";
+        else if (action.type === "INCOMPLETE_MEASURE") primaryAction.label = "Mit Pausen auffüllen";
+        else if (action.type === "OVERFULL_MEASURE") {
+            primaryAction.label = "Zu Verzierungen umwandeln";
             primaryAction.type = "CONVERT_GRACE";
         }
 
         const card = document.createElement("div");
         card.className = "issue-card";
         card.innerHTML = `
-            <div onclick="jumpTo('${action.measure}')">
+            <div onclick="jumpTo('${action.measure}')" style="cursor:pointer">
                 <strong>Takt ${action.measure}: ${action.type}</strong>
                 <p style="font-size:0.8em; margin:5px 0;">${action.message}</p>
             </div>
             <div style="display:flex; gap:5px;">
-                <button class="btn-fix" onclick="applyFix('${currentFile}', ${action.measure}, '${primaryAction.type}')">
+                <!-- WICHTIG: Hier muss 'event' in der Klammer stehen! -->
+                <button class="btn-fix" onclick="applyFix('${currentFile}', ${action.measure}, '${primaryAction.type}', event)">
                     ${primaryAction.label}
                 </button>
-                ${showIgnore ? `
-                    <button class="btn-fix" style="background:#7f8c8d; width:auto;" onclick="applyFix('${currentFile}', ${action.measure}, 'IGNORE')">
-                        Als Auftakt ignorieren ✅
+                ${action.type === "INCOMPLETE_MEASURE" ? `
+                    <button class="btn-fix" style="background:#7f8c8d; width:auto;" onclick="applyFix('${currentFile}', ${action.measure}, 'IGNORE', event)">
+                        Ignorieren ✅
                     </button>
                 ` : ''}
             </div>
         `;
         container.appendChild(card);
     });
+}
+
+// Die reparierte applyFix Funktion mit "Gauge"-Feedback
+async function applyFix(filename, measure, type, event) {
+    const btn = event ? event.target : null;
+    const originalText = btn ? btn.innerText : "Heilen";
+    
+    // Visuelles Feedback (Gauge Ersatz)
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Heile... ⏳";
+        btn.style.opacity = "0.6";
+    }
+    
+    log(`Starte Heilung: Takt ${measure} (${type})...`);
+
+    try {
+        const response = await fetch('/apply-fix', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename, measure, type })
+        });
+        const result = await response.json();
+
+        if (result.status === "success") {
+            log(`✅ Takt ${measure}: ${result.message}`);
+            if (btn) {
+                btn.innerText = "Geheilt ✔️";
+                btn.style.background = "#bdc3c7";
+            }
+            // Kurze Pause, dann neu laden
+            setTimeout(() => loadFile("needs_review", filename), 800);
+        } else {
+            log(`❌ Fehler in Takt ${measure}: ${result.message}`);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = "Fehler ⚠️";
+                btn.style.background = "#e74c3c";
+                btn.style.opacity = "1";
+            }
+            alert("Fehler vom Server: " + result.message);
+        }
+    } catch (err) {
+        log("Netzwerkfehler beim Heilen.");
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
+    }
+}
+
+// Die reparierte applyFix Funktion mit "Gauge"-Feedback
+async function applyFix(filename, measure, type, event) {
+    const btn = event ? event.target : null;
+    const originalText = btn ? btn.innerText : "Heilen";
+    
+    // Visuelles Feedback (Gauge Ersatz)
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = "Heile... ⏳";
+        btn.style.opacity = "0.6";
+    }
+    
+    log(`Starte Heilung: Takt ${measure} (${type})...`);
+
+    try {
+        const response = await fetch('/apply-fix', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename, measure, type })
+        });
+        const result = await response.json();
+
+        if (result.status === "success") {
+            log(`✅ Takt ${measure}: ${result.message}`);
+            if (btn) {
+                btn.innerText = "Geheilt ✔️";
+                btn.style.background = "#bdc3c7";
+            }
+            // Kurze Pause, dann neu laden
+            setTimeout(() => loadFile("needs_review", filename), 800);
+        } else {
+            log(`❌ Fehler in Takt ${measure}: ${result.message}`);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = "Fehler ⚠️";
+                btn.style.background = "#e74c3c";
+                btn.style.opacity = "1";
+            }
+            alert("Fehler vom Server: " + result.message);
+        }
+    } catch (err) {
+        log("Netzwerkfehler beim Heilen.");
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
+    }
 }
 
     // DIE MEI-BASIERTE NAVIGATION
@@ -231,22 +325,48 @@ function jumpTo(measureNum) {
     }
 }
 
-    async function applyFix(filename, measure, type) {
-        log(`Heile Takt ${measure}...`);
-        try {
-            const response = await fetch('/apply-fix', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename, measure, type })
-            });
-            const result = await response.json();
-            if (result.status === "success") {
-                log("✅ Erfolg!");
-                loadFile("needs_review", filename); 
-            } else { alert("Fehler: " + result.message); }
-        } catch (err) { log("Netzwerkfehler."); }
-    }
+// In static/index.html die Funktion applyFix ersetzen:
 
+async function applyFix(filename, measure, type, event) {
+    const btn = event.target;
+    const originalText = btn.innerText;
+    
+    // UI-Feedback: Button sperren
+    btn.disabled = true;
+    btn.innerText = "Heile... ⏳";
+    btn.style.opacity = "0.5";
+    btn.style.cursor = "not-allowed";
+
+    log(`Anfrage gesendet: Takt ${measure} (${type})`);
+
+    try {
+        const response = await fetch('/apply-fix', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename, measure, type })
+        });
+        const result = await response.json();
+
+        if (result.status === "success") {
+            log(`✅ Takt ${measure}: ${result.message}`);
+            btn.innerText = "Geheilt ✔️";
+            btn.style.background = "#bdc3c7"; // Grau machen
+            // Datei neu laden um Ergebnis zu sehen
+            setTimeout(() => loadFile("needs_review", filename), 500);
+        } else {
+            log(`❌ Fehler: ${result.message}`);
+            btn.disabled = false;
+            btn.innerText = "Fehlgeschlagen ⚠️";
+            btn.style.opacity = "1";
+            btn.style.background = "#e74c3c";
+            alert("Konnte nicht gespeichert werden: " + result.message);
+        }
+    } catch (err) {
+        log("Netzwerkfehler.");
+        btn.disabled = false;
+        btn.innerText = originalText;
+    }
+}
     function render() {
         if (!vrvToolkit) return;
         document.getElementById("notation").innerHTML = vrvToolkit.renderToSVG(currentPage);

@@ -1,6 +1,5 @@
 import xml.etree.ElementTree as ET
 import re
-from parser import RobustParser  # Importiert die Klasse aus core/parser.py
 
 _last_log = ""
 
@@ -12,74 +11,66 @@ def sort_note_children(n):
     for c in children: n.append(c)
 
 def clean_and_scan(xml_string):
+    global _last_log
+    _last_log = ""
     proposals = []
-    # Namespaces entfernen für einfachere Verarbeitung
+    fixes_count = 0
+    
+    # Namespaces entfernen
     xml_string = re.sub(r'\sxmlns="[^"]+"', '', xml_string, count=1)
     xml_string = re.sub(r'\sxmlns:[^=]+="[^"]+"', '', xml_string)
     
     try:
         root = ET.fromstring(xml_string.encode("utf-8"))
-        for el in root.iter():
-            if '}' in el.tag: el.tag = el.tag.split('}', 1)[1]
-
+        
+        # Divisions finden (Standard 480)
         divs_el = root.find('.//divisions')
         divs = int(divs_el.text) if divs_el is not None else 480
-        curr_beats, curr_type = 4, 4 
+        
+        # MATHEMATIK-FIX: 
+        # Ein 256stel ist (divisions * 4) / 256  => divisions / 64
+        # Alles was kleiner ist, bringt music21 zum Absturz.
+        min_safe_duration = max(1, divs // 64)
 
-        for measure in root.findall('.//part/measure'):
-            m_num = measure.get('number', '?')
-            measure.set('id', f'm-idx-{m_num}')
+        for note in root.findall('.//part/measure/note'):
+            dur_el = note.find('duration')
+            type_el = note.find('type')
             
-            t_el = measure.find('.//time')
-            if t_el is not None:
-                curr_beats = int(t_el.findtext('beats', str(curr_beats)))
-                curr_type = int(t_el.findtext('beat-type', str(curr_type)))
+            # 1. Check: Ist die Note zu kurz?
+            if dur_el is not None and note.find('grace') is None:
+                val = int(dur_el.text)
+                if val < min_safe_duration:
+                    dur_el.text = str(min_safe_duration)
+                    if type_el is not None:
+                        type_el.text = '256th'
+                    fixes_count += 1
             
-            limit = int(curr_beats * (4 / curr_type) * divs)
-            st_durs = {"1": 0, "2": 0}
+            # 2. Check: Ist der Typ verboten?
+            if type_el is not None and type_el.text in ['2048th', '1024th', '512th']:
+                type_el.text = '256th'
+                if dur_el is not None:
+                    dur_el.text = str(max(int(dur_el.text), min_safe_duration))
+                fixes_count += 1
 
-            for n in measure.findall('.//note'):
-                if n.find('chord') is None and n.find('grace') is None:
-                    st = n.findtext('staff', '1')
-                    if st not in st_durs: st_durs[st] = 0
-                    st_durs[st] += int(n.findtext('duration', '0'))
-                sort_note_children(n)
+            sort_note_children(note)
 
-            for st, dur in st_durs.items():
-                if dur > limit + 5:
-                    eff, nom = round(dur/divs, 2), round(limit/divs, 2)
-                    proposals.append({
-                        "type": "SUGGESTED_HEALING",
-                        "measure": int(m_num) if m_num.isdigit() else m_num,
-                        "message": f"Takt {m_num} überfüllt ({eff}/{nom}).",
-                        "action_id": "convert_to_grace",
-                        "xml_id": f"m-idx-{m_num}"
-                    })
-
+        _last_log = f"Technik: {fixes_count} Micro-Noten (2048th) auf 256th-Niveau gehoben."
         out = ET.tostring(root, encoding='unicode', method='xml')
         header = '<?xml version="1.0" encoding="UTF-8"?>\n'
         return header + out, proposals
+
     except Exception as e:
-        return xml_string, [{"type": "ERROR", "message": str(e)}]
+        _last_log = f"Fehler: {e}"
+        return xml_string, []
 
 def load_robustly(file_path):
-    global _last_log
-    # Hier nutzen wir den RobustParser aus der parser.py
-    raw_xml_bytes = RobustParser.pre_clean_xml(file_path)
-    
-    if not raw_xml_bytes:
-        _last_log = "Fehler: Datei konnte nicht gelesen werden."
-        return ""
-
-    xml_string = raw_xml_bytes.decode('utf-8', errors='ignore')
-    cleaned_xml, proposals = clean_and_scan(xml_string)
-    
-    if proposals:
-        _last_log = "\n".join([p['message'] for p in proposals])
-    else:
-        _last_log = "Keine Korrekturen notwendig."
-        
+    from parser import RobustParser
+    raw_bytes = RobustParser.pre_clean_xml(file_path)
+    if not raw_bytes: return ""
+    xml_str = raw_bytes.decode("utf-8", errors="ignore")
+    cleaned_xml, _ = clean_and_scan(xml_str)
     return cleaned_xml
 
 def get_last_log():
+    global _last_log
     return _last_log
